@@ -3,9 +3,12 @@ import {
   type Aide, type InsertAide,
   type Activity, type InsertActivity,
   type Block, type InsertBlock,
-  type Template, type InsertTemplate
+  type Template, type InsertTemplate,
+  students, aides, activities, blocks, templates
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 
 export interface IStorage {
   // Students
@@ -43,187 +46,129 @@ export interface IStorage {
   deleteTemplate(id: string): Promise<boolean>;
 }
 
-export class MemStorage implements IStorage {
-  private students: Map<string, Student> = new Map();
-  private aides: Map<string, Aide> = new Map();
-  private activities: Map<string, Activity> = new Map();
-  private blocks: Map<string, Block> = new Map();
-  private templates: Map<string, Template> = new Map();
-
-  constructor() {
-    // Initialize with empty data
-  }
-
+export class DatabaseStorage implements IStorage {
   // Students
   async getStudents(): Promise<Student[]> {
-    return Array.from(this.students.values());
+    return await db.select().from(students);
   }
 
   async getStudent(id: string): Promise<Student | undefined> {
-    return this.students.get(id);
+    const [student] = await db.select().from(students).where(eq(students.id, id));
+    return student || undefined;
   }
 
   async createStudent(insertStudent: InsertStudent): Promise<Student> {
-    const id = randomUUID();
-    const student: Student = { 
-      ...insertStudent, 
-      id, 
-      createdAt: new Date() 
-    };
-    this.students.set(id, student);
+    const [student] = await db.insert(students).values(insertStudent).returning();
     return student;
   }
 
   async updateStudent(id: string, updateData: Partial<InsertStudent>): Promise<Student | undefined> {
-    const existing = this.students.get(id);
-    if (!existing) return undefined;
-    
-    const updated = { ...existing, ...updateData };
-    this.students.set(id, updated);
-    return updated;
+    const [updated] = await db.update(students).set(updateData).where(eq(students.id, id)).returning();
+    return updated || undefined;
   }
 
   async deleteStudent(id: string): Promise<boolean> {
-    return this.students.delete(id);
+    const result = await db.delete(students).where(eq(students.id, id));
+    return result.rowCount > 0;
   }
 
   // Aides
   async getAides(): Promise<Aide[]> {
-    return Array.from(this.aides.values());
+    return await db.select().from(aides);
   }
 
   async getAide(id: string): Promise<Aide | undefined> {
-    return this.aides.get(id);
+    const [aide] = await db.select().from(aides).where(eq(aides.id, id));
+    return aide || undefined;
   }
 
   async createAide(insertAide: InsertAide): Promise<Aide> {
-    const id = randomUUID();
-    const aide: Aide = { 
-      ...insertAide, 
-      id, 
-      createdAt: new Date() 
-    };
-    this.aides.set(id, aide);
+    const [aide] = await db.insert(aides).values(insertAide).returning();
     return aide;
   }
 
   async updateAide(id: string, updateData: Partial<InsertAide>): Promise<Aide | undefined> {
-    const existing = this.aides.get(id);
-    if (!existing) return undefined;
-    
-    const updated = { ...existing, ...updateData };
-    this.aides.set(id, updated);
-    return updated;
+    const [updated] = await db.update(aides).set(updateData).where(eq(aides.id, id)).returning();
+    return updated || undefined;
   }
 
   async deleteAide(id: string): Promise<boolean> {
-    return this.aides.delete(id);
+    const result = await db.delete(aides).where(eq(aides.id, id));
+    return result.rowCount > 0;
   }
 
   // Activities
   async getActivities(): Promise<Activity[]> {
-    return Array.from(this.activities.values());
+    return await db.select().from(activities);
   }
 
   async getActivity(id: string): Promise<Activity | undefined> {
-    return this.activities.get(id);
+    const [activity] = await db.select().from(activities).where(eq(activities.id, id));
+    return activity || undefined;
   }
 
   async createActivity(insertActivity: InsertActivity): Promise<Activity> {
-    const id = randomUUID();
-    const activity: Activity = { 
-      ...insertActivity, 
-      id, 
-      createdAt: new Date() 
-    };
-    this.activities.set(id, activity);
+    const [activity] = await db.insert(activities).values(insertActivity).returning();
     return activity;
   }
 
   async updateActivity(id: string, updateData: Partial<InsertActivity>): Promise<Activity | undefined> {
-    const existing = this.activities.get(id);
-    if (!existing) return undefined;
-    
-    const updated = { ...existing, ...updateData };
-    this.activities.set(id, updated);
-    return updated;
+    const [updated] = await db.update(activities).set(updateData).where(eq(activities.id, id)).returning();
+    return updated || undefined;
   }
 
   async deleteActivity(id: string): Promise<boolean> {
-    return this.activities.delete(id);
+    const result = await db.delete(activities).where(eq(activities.id, id));
+    return result.rowCount > 0;
   }
 
   // Blocks
   async getBlocks(date?: string): Promise<Block[]> {
-    const allBlocks = Array.from(this.blocks.values());
     if (date) {
-      return allBlocks.filter(block => block.date === date);
+      return await db.select().from(blocks).where(eq(blocks.date, date));
     }
-    return allBlocks;
+    return await db.select().from(blocks);
   }
 
   async getBlock(id: string): Promise<Block | undefined> {
-    return this.blocks.get(id);
+    const [block] = await db.select().from(blocks).where(eq(blocks.id, id));
+    return block || undefined;
   }
 
   async createBlock(insertBlock: InsertBlock): Promise<Block> {
-    const id = randomUUID();
-    const block: Block = { 
-      ...insertBlock, 
-      id, 
-      studentIds: insertBlock.studentIds || [],
-      aideIds: insertBlock.aideIds || [],
-      notes: insertBlock.notes || "",
-      recurrence: insertBlock.recurrence || "none",
-      createdAt: new Date() 
-    };
-    this.blocks.set(id, block);
+    const [block] = await db.insert(blocks).values(insertBlock).returning();
     return block;
   }
 
   async updateBlock(id: string, updateData: Partial<InsertBlock>): Promise<Block | undefined> {
-    const existing = this.blocks.get(id);
-    if (!existing) return undefined;
-    
-    const updated: Block = { 
-      ...existing, 
-      ...updateData,
-      studentIds: updateData.studentIds || existing.studentIds,
-      aideIds: updateData.aideIds || existing.aideIds,
-      notes: updateData.notes || existing.notes,
-      recurrence: updateData.recurrence || existing.recurrence,
-    };
-    this.blocks.set(id, updated);
-    return updated;
+    const [updated] = await db.update(blocks).set(updateData).where(eq(blocks.id, id)).returning();
+    return updated || undefined;
   }
 
   async deleteBlock(id: string): Promise<boolean> {
-    return this.blocks.delete(id);
+    const result = await db.delete(blocks).where(eq(blocks.id, id));
+    return result.rowCount > 0;
   }
 
   // Templates
   async getTemplates(): Promise<Template[]> {
-    return Array.from(this.templates.values());
+    return await db.select().from(templates);
   }
 
   async getTemplate(id: string): Promise<Template | undefined> {
-    return this.templates.get(id);
+    const [template] = await db.select().from(templates).where(eq(templates.id, id));
+    return template || undefined;
   }
 
   async createTemplate(insertTemplate: InsertTemplate): Promise<Template> {
-    const id = randomUUID();
-    const template: Template = { 
-      ...insertTemplate, 
-      id, 
-      createdAt: new Date() 
-    };
-    this.templates.set(id, template);
+    const [template] = await db.insert(templates).values(insertTemplate).returning();
     return template;
   }
 
   async deleteTemplate(id: string): Promise<boolean> {
-    return this.templates.delete(id);
+    const result = await db.delete(templates).where(eq(templates.id, id));
+    return result.rowCount > 0;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
