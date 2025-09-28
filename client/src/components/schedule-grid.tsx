@@ -184,9 +184,42 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
   const onDragEnd = (result: DropResult) => {
     if (!result.destination) return;
 
-    // For now, disable drag functionality as we simplified the droppable structure
-    // This can be re-implemented later if needed
-    console.log("Drag functionality temporarily disabled");
+    const blockId = result.draggableId;
+    const block = blocks.find(b => b.id === blockId);
+    if (!block) return;
+
+    // Parse the destination to get the target time
+    const destinationId = result.destination.droppableId;
+    let newStartTime: string;
+
+    if (destinationId === "schedule-grid") {
+      // If dropped on the main grid, calculate time based on the position
+      // For now, we'll keep the block at its current time since we can't determine
+      // the exact time slot without more complex calculation
+      return;
+    } else if (destinationId.startsWith("timeslot-")) {
+      // If we had individual time slot droppables, parse the time
+      const timeSlotIndex = parseInt(destinationId.replace("timeslot-", ""));
+      const startHour = 8 + timeSlotIndex;
+      newStartTime = `${startHour.toString().padStart(2, "0")}:00`;
+    } else {
+      return;
+    }
+
+    // Calculate the duration of the block
+    const originalDuration = timeToMinutes(block.endTime) - timeToMinutes(block.startTime);
+    const newEndTime = timeToMinutes(newStartTime) + originalDuration;
+    const newEndTimeStr = `${Math.floor(newEndTime / 60).toString().padStart(2, "0")}:${(newEndTime % 60).toString().padStart(2, "0")}`;
+
+    // Update the block with new time
+    updateBlockMutation.mutate({
+      id: blockId,
+      data: {
+        ...block,
+        startTime: newStartTime,
+        endTime: newEndTimeStr,
+      },
+    });
   };
 
   if (blocksLoading) {
@@ -247,126 +280,138 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
               </div>
 
               {/* Schedule Content */}
-              <Droppable droppableId="schedule-grid">
-                {(provided: any) => (
-                  <div 
-                    ref={provided.innerRef}
-                    {...provided.droppableProps}
-                    className="relative" 
-                    style={{ minHeight: "512px" }}
-                  >
-                    {/* Grid Lines */}
-                    <div className="absolute inset-0">
-                      {timeSlots.map((time, index) => (
-                        <div
-                          key={time}
-                          className="droppable-area h-16 border-b border-border"
-                          onClick={() => handleTimeSlotClick(time)}
-                        />
-                      ))}
-                    </div>
+              <div className="relative" style={{ minHeight: "512px" }}>
+                {/* Individual Time Slot Droppables */}
+                {timeSlots.map((time, index) => (
+                  <Droppable key={`timeslot-${index}`} droppableId={`timeslot-${index}`}>
+                    {(provided: any, snapshot: any) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        className={`droppable-area h-16 border-b border-border cursor-pointer hover:bg-accent/50 transition-colors ${
+                          snapshot.isDraggingOver ? "bg-primary/10 border-primary" : ""
+                        }`}
+                        onClick={() => handleTimeSlotClick(time)}
+                        style={{ 
+                          position: "relative",
+                          top: `${index * 64}px`
+                        }}
+                      >
+                        {provided.placeholder}
+                      </div>
+                    )}
+                  </Droppable>
+                ))}
 
-                    {/* Schedule Blocks */}
-                    {filteredBlocks.map((block, index) => {
-                      const blockStyle = getBlockStyle(block);
-                      const activity = getActivity(block.activityId);
-                      const conflict = conflicts.get(block.id);
+                {/* Schedule Blocks */}
+                <Droppable droppableId="blocks-container">
+                  {(provided: any) => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                      className="absolute inset-0 pointer-events-none"
+                    >
+                      {filteredBlocks.map((block, index) => {
+                        const blockStyle = getBlockStyle(block);
+                        const activity = getActivity(block.activityId);
+                        const conflict = conflicts.get(block.id);
 
-                      return (
-                        <Draggable key={block.id} draggableId={block.id} index={index}>
-                          {(provided: any, snapshot: any) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              className={blockStyle.className}
-                              style={{
-                                ...blockStyle.style,
-                                ...provided.draggableProps.style,
-                                opacity: snapshot.isDragging ? 0.8 : 1,
-                              }}
-                              onClick={() => handleBlockClick(block)}
-                              data-testid={`block-${block.id}`}
-                            >
-                              <div className="flex items-center justify-between h-full">
-                                <div className="flex-1 min-w-0">
-                                  <h4 className="text-sm font-medium truncate">
-                                    {activity?.title || "Unknown Activity"}
-                                  </h4>
-                                  <div className="flex items-center mt-1 space-x-1 flex-wrap">
-                                    {/* Students */}
-                                    {block.studentIds.slice(0, 3).map((studentId) => {
-                                      const student = getStudent(studentId);
-                                      if (!student) return null;
-                                      return (
-                                        <Badge
-                                          key={studentId}
-                                          variant="secondary"
-                                          className={`text-xs px-2 py-0.5 ${getEntityBadgeClass(student.color)}`}
-                                        >
-                                          {student.name}
+                        return (
+                          <Draggable key={block.id} draggableId={block.id} index={index}>
+                            {(provided: any, snapshot: any) => (
+                              <div
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                className={`${blockStyle.className} pointer-events-auto`}
+                                style={{
+                                  ...blockStyle.style,
+                                  ...provided.draggableProps.style,
+                                  opacity: snapshot.isDragging ? 0.8 : 1,
+                                }}
+                                onClick={() => handleBlockClick(block)}
+                                data-testid={`block-${block.id}`}
+                              >
+                                <div className="flex items-center justify-between h-full">
+                                  <div className="flex-1 min-w-0">
+                                    <h4 className="text-sm font-medium truncate">
+                                      {activity?.title || "Unknown Activity"}
+                                    </h4>
+                                    <div className="flex items-center mt-1 space-x-1 flex-wrap">
+                                      {/* Students */}
+                                      {block.studentIds.slice(0, 3).map((studentId) => {
+                                        const student = getStudent(studentId);
+                                        if (!student) return null;
+                                        return (
+                                          <Badge
+                                            key={studentId}
+                                            variant="secondary"
+                                            className={`text-xs px-2 py-0.5 ${getEntityBadgeClass(student.color)}`}
+                                          >
+                                            {student.name}
+                                          </Badge>
+                                        );
+                                      })}
+                                      {block.studentIds.length > 3 && (
+                                        <Badge variant="secondary" className="text-xs px-2 py-0.5">
+                                          +{block.studentIds.length - 3}
                                         </Badge>
-                                      );
-                                    })}
-                                    {block.studentIds.length > 3 && (
-                                      <Badge variant="secondary" className="text-xs px-2 py-0.5">
-                                        +{block.studentIds.length - 3}
-                                      </Badge>
-                                    )}
-                                    
-                                    {/* Aides */}
-                                    {block.aideIds.slice(0, 2).map((aideId) => {
-                                      const aide = getAide(aideId);
-                                      if (!aide) return null;
-                                      return (
-                                        <Badge
-                                          key={aideId}
-                                          variant="secondary"
-                                          className={`text-xs px-2 py-0.5 ${getEntityBadgeClass(aide.color)}`}
-                                        >
-                                          {aide.name}
+                                      )}
+                                      
+                                      {/* Aides */}
+                                      {block.aideIds.slice(0, 2).map((aideId) => {
+                                        const aide = getAide(aideId);
+                                        if (!aide) return null;
+                                        return (
+                                          <Badge
+                                            key={aideId}
+                                            variant="secondary"
+                                            className={`text-xs px-2 py-0.5 ${getEntityBadgeClass(aide.color)}`}
+                                          >
+                                            {aide.name}
+                                          </Badge>
+                                        );
+                                      })}
+                                      {block.aideIds.length > 2 && (
+                                        <Badge variant="secondary" className="text-xs px-2 py-0.5">
+                                          +{block.aideIds.length - 2}
                                         </Badge>
-                                      );
-                                    })}
-                                    {block.aideIds.length > 2 && (
-                                      <Badge variant="secondary" className="text-xs px-2 py-0.5">
-                                        +{block.aideIds.length - 2}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="flex items-center space-x-1 ml-2">
-                                  {conflict && (
-                                    <div className="flex items-center">
-                                      {conflict.type === "aide" ? (
-                                        <AlertCircle 
-                                          className="h-3 w-3 text-red-600"
-                                        />
-                                      ) : (
-                                        <AlertTriangle 
-                                          className="h-3 w-3 text-yellow-600"
-                                        />
                                       )}
                                     </div>
-                                  )}
-                                  {block.notes && (
-                                    <StickyNote 
-                                      className="h-3 w-3 text-muted-foreground"
-                                    />
-                                  )}
-                                  <div {...provided.dragHandleProps}>
-                                    <GripVertical className="h-3 w-3 text-muted-foreground" />
+                                  </div>
+                                  <div className="flex items-center space-x-1 ml-2">
+                                    {conflict && (
+                                      <div className="flex items-center">
+                                        {conflict.type === "aide" ? (
+                                          <AlertCircle 
+                                            className="h-3 w-3 text-red-600"
+                                          />
+                                        ) : (
+                                          <AlertTriangle 
+                                            className="h-3 w-3 text-yellow-600"
+                                          />
+                                        )}
+                                      </div>
+                                    )}
+                                    {block.notes && (
+                                      <StickyNote 
+                                        className="h-3 w-3 text-muted-foreground"
+                                      />
+                                    )}
+                                    <div {...provided.dragHandleProps}>
+                                      <GripVertical className="h-3 w-3 text-muted-foreground" />
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                            </div>
-                          )}
-                        </Draggable>
-                      );
-                    })}
-                    {provided.placeholder}
-                  </div>
-                )}
-              </Droppable>
+                            )}
+                          </Draggable>
+                        );
+                      })}
+                      {provided.placeholder}
+                    </div>
+                  )}
+                </Droppable>
+              </div>
             </div>
           </DragDropContext>
         </div>
