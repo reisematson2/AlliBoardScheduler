@@ -23,7 +23,16 @@ export default function PrintView() {
   const { toast } = useToast();
 
   const { data: blocks = [], isLoading: blocksLoading } = useQuery<Block[]>({
-    queryKey: ["/api/blocks", { date: selectedDate }],
+    queryKey: ["/api/blocks", selectedDate],
+    queryFn: async () => {
+      const res = await fetch(`/api/blocks?date=${selectedDate}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        throw new Error(`${res.status}: ${res.statusText}`);
+      }
+      return res.json();
+    },
   });
 
   const { data: students = [] } = useQuery<Student[]>({

@@ -31,7 +31,16 @@ export default function Home() {
   });
 
   const { data: blocks = [] } = useQuery<Block[]>({
-    queryKey: ["/api/blocks", { date: currentDate }],
+    queryKey: ["/api/blocks", currentDate],
+    queryFn: async () => {
+      const res = await fetch(`/api/blocks?date=${currentDate}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        throw new Error(`${res.status}: ${res.statusText}`);
+      }
+      return res.json();
+    },
   });
 
   const conflicts = detectConflicts(blocks, students, aides);
