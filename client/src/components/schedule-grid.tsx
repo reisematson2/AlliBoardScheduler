@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DragDropContext, Droppable, Draggable, DropResult } from "react-beautiful-dnd";
 import { Card } from "@/components/ui/card";
@@ -35,6 +35,9 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [selectedBlock, setSelectedBlock] = useState<Block | null>(null);
   const [newBlockTime, setNewBlockTime] = useState<{ start: string; end: string } | null>(null);
+  const [resizingBlock, setResizingBlock] = useState<{ id: string; type: 'top' | 'bottom'; startY: number; originalBlock: Block } | null>(null);
+  const [optimisticBlocks, setOptimisticBlocks] = useState<Map<string, Block>>(new Map());
+  const resizeDraftRef = useRef<Block | null>(null);
   const { toast } = useToast();
 
   const { data: blocks = [], isLoading: blocksLoading } = useQuery<Block[]>({
@@ -78,18 +81,23 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
   const conflicts = detectConflicts(blocks, students, aides);
 
   const filteredBlocks = useMemo(() => {
-    if (viewMode === "master") return blocks;
+    // Merge optimistic updates with server data
+    const mergedBlocks = blocks.map(block => 
+      optimisticBlocks.get(block.id) || block
+    );
+    
+    if (viewMode === "master") return mergedBlocks;
     
     if (viewMode === "student" && selectedEntityId) {
-      return blocks.filter(block => block.studentIds.includes(selectedEntityId));
+      return mergedBlocks.filter(block => block.studentIds.includes(selectedEntityId));
     }
     
     if (viewMode === "aide" && selectedEntityId) {
-      return blocks.filter(block => block.aideIds.includes(selectedEntityId));
+      return mergedBlocks.filter(block => block.aideIds.includes(selectedEntityId));
     }
     
-    return blocks;
-  }, [blocks, viewMode, selectedEntityId]);
+    return mergedBlocks;
+  }, [blocks, viewMode, selectedEntityId, optimisticBlocks]);
 
   const getActivity = (activityId: string) => {
     return activities.find(a => a.id === activityId);
@@ -220,6 +228,103 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
     });
   };
 
+  const handleResizeStart = (blockId: string, type: 'top' | 'bottom', e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const initialY = e.clientY;
+    const originalBlock = blocks.find(b => b.id === blockId);
+    if (!originalBlock) return;
+    
+    setResizingBlock({ id: blockId, type, startY: initialY, originalBlock });
+    resizeDraftRef.current = originalBlock; // Initialize ref with original
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaY = e.clientY - initialY;
+      const pixelsPerHour = 64; // 64px per hour (16px per 15min slot)
+      const minutesDelta = Math.round((deltaY / pixelsPerHour) * 60);
+      
+      // Snap to 15-minute intervals
+      const snappedDelta = Math.round(minutesDelta / 15) * 15;
+      
+      let newStartTime = originalBlock.startTime;
+      let newEndTime = originalBlock.endTime;
+      
+      if (type === 'top') {
+        // Resize from top (change start time)
+        const currentStart = timeToMinutes(originalBlock.startTime);
+        const newStart = Math.max(0, currentStart + snappedDelta);
+        const newEnd = timeToMinutes(originalBlock.endTime);
+        
+        // Minimum 15 minutes duration
+        if (newEnd - newStart >= 15) {
+          const hours = Math.floor(newStart / 60);
+          const minutes = newStart % 60;
+          newStartTime = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+        }
+      } else {
+        // Resize from bottom (change end time)
+        const currentEnd = timeToMinutes(originalBlock.endTime);
+        const newEnd = Math.max(timeToMinutes(originalBlock.startTime) + 15, currentEnd + snappedDelta);
+        const hours = Math.floor(newEnd / 60);
+        const minutes = newEnd % 60;
+        newEndTime = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+      }
+      
+      // Update both ref and optimistic state for immediate UI feedback
+      if (newStartTime !== originalBlock.startTime || newEndTime !== originalBlock.endTime) {
+        const updatedBlock = {
+          ...originalBlock,
+          startTime: newStartTime,
+          endTime: newEndTime,
+        };
+        resizeDraftRef.current = updatedBlock; // Update ref with live state
+        setOptimisticBlocks(prev => {
+          const newMap = new Map(prev);
+          newMap.set(blockId, updatedBlock);
+          return newMap;
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      const finalBlock = resizeDraftRef.current;
+      if (finalBlock && 
+          (finalBlock.startTime !== originalBlock.startTime || 
+           finalBlock.endTime !== originalBlock.endTime)) {
+        // Make single API call with final state, keep optimistic state until mutation resolves
+        updateBlockMutation.mutate({
+          id: blockId,
+          data: finalBlock,
+        }, {
+          onSettled: () => {
+            // Clean up optimistic state only after mutation completes
+            setOptimisticBlocks(prev => {
+              const newMap = new Map(prev);
+              newMap.delete(blockId);
+              return newMap;
+            });
+          }
+        });
+      } else {
+        // No changes, clean up immediately
+        setOptimisticBlocks(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(blockId);
+          return newMap;
+        });
+      }
+      
+      // Clean up resize state and listeners
+      resizeDraftRef.current = null;
+      setResizingBlock(null);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
   if (blocksLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -320,7 +425,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
                               <div
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
-                                className={`${blockStyle.className} pointer-events-auto`}
+                                className={`${blockStyle.className} pointer-events-auto relative`}
                                 style={{
                                   ...blockStyle.style,
                                   ...provided.draggableProps.style,
@@ -329,7 +434,21 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
                                 onClick={() => handleBlockClick(block)}
                                 data-testid={`block-${block.id}`}
                               >
-                                <div className="flex items-center justify-between h-full">
+                                {/* Top Resize Handle */}
+                                <div
+                                  className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize bg-transparent hover:bg-primary/20 transition-colors"
+                                  onMouseDown={(e) => handleResizeStart(block.id, 'top', e)}
+                                  title="Resize block start time"
+                                />
+                                
+                                {/* Bottom Resize Handle */}
+                                <div
+                                  className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize bg-transparent hover:bg-primary/20 transition-colors"
+                                  onMouseDown={(e) => handleResizeStart(block.id, 'bottom', e)}
+                                  title="Resize block end time"
+                                />
+
+                                <div className="flex items-center justify-between h-full px-2 py-1">
                                   <div className="flex-1 min-w-0">
                                     <h4 className="text-sm font-medium truncate">
                                       {activity?.title || "Unknown Activity"}
