@@ -253,7 +253,7 @@ export default function Schedule() {
                 </SelectTrigger>
                 <SelectContent>
                   {templateNames.length === 0 ? (
-                    <SelectItem value="" disabled>
+                    <SelectItem value="no-templates" disabled>
                       No templates saved
                     </SelectItem>
                   ) : (
