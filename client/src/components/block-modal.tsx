@@ -31,6 +31,8 @@ import { Block, Student, Aide, Activity, insertBlockSchema } from "@shared/schem
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay } from "@/lib/time-utils";
+import { RecurrencePatternEditor } from "@/components/recurrence-pattern-editor";
+import { parseRecurrencePattern, serializeRecurrencePattern, generateRecurrenceDates } from "@shared/recurrence-utils";
 
 interface BlockModalProps {
   open: boolean;
@@ -51,6 +53,7 @@ export function BlockModal({
 }: BlockModalProps) {
   const { toast } = useToast();
   const isEditing = !!block;
+  const [showRecurrenceEditor, setShowRecurrenceEditor] = useState(false);
 
   const { data: activities = [] } = useQuery<Activity[]>({
     queryKey: ["/api/activities"],
@@ -73,7 +76,7 @@ export function BlockModal({
       studentIds: [] as string[],
       aideIds: [] as string[],
       notes: "",
-      recurrence: "none",
+      recurrence: '{"type":"none"}',
       date: currentDate,
     },
   });
@@ -87,7 +90,7 @@ export function BlockModal({
         studentIds: block.studentIds,
         aideIds: block.aideIds,
         notes: block.notes || "",
-        recurrence: block.recurrence || "none",
+        recurrence: block.recurrence || '{"type":"none"}',
         date: block.date,
       });
     } else {
@@ -98,7 +101,7 @@ export function BlockModal({
         studentIds: [],
         aideIds: [],
         notes: "",
-        recurrence: "none",
+        recurrence: '{"type":"none"}',
         date: currentDate,
       });
     }
@@ -106,9 +109,20 @@ export function BlockModal({
 
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/blocks", data),
-    onSuccess: () => {
+    onSuccess: (result: any) => {
+      // Handle both single block and multiple blocks response
+      const blockCount = result?.count || 1;
+      const isRecurring = blockCount > 1;
+      
       queryClient.invalidateQueries({ queryKey: ["/api/blocks", currentDate] });
-      toast({ title: "Schedule block created successfully" });
+      
+      if (isRecurring) {
+        toast({ 
+          title: `${blockCount} recurring schedule blocks created successfully` 
+        });
+      } else {
+        toast({ title: "Schedule block created successfully" });
+      }
       onClose();
     },
     onError: () => {
@@ -357,20 +371,33 @@ export function BlockModal({
               name="recurrence"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Recurrence</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger data-testid="select-recurrence">
-                        <SelectValue placeholder="Select recurrence" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="none">No Repeat</SelectItem>
-                      <SelectItem value="daily">Daily</SelectItem>
-                      <SelectItem value="weekly">Weekly</SelectItem>
-                      <SelectItem value="custom">Custom</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <FormLabel>Recurrence Pattern</FormLabel>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="text-sm">
+                        {parseRecurrencePattern(field.value).type === 'none' 
+                          ? 'No recurrence' 
+                          : `Recurring schedule configured`
+                        }
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowRecurrenceEditor(!showRecurrenceEditor)}
+                        data-testid="button-configure-recurrence"
+                      >
+                        {showRecurrenceEditor ? 'Hide' : 'Configure'}
+                      </Button>
+                    </div>
+                    
+                    {showRecurrenceEditor && (
+                      <RecurrencePatternEditor
+                        value={field.value}
+                        onChange={field.onChange}
+                      />
+                    )}
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}

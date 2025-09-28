@@ -36,6 +36,7 @@ export interface IStorage {
   getBlocks(date?: string): Promise<Block[]>;
   getBlock(id: string): Promise<Block | undefined>;
   createBlock(block: InsertBlock): Promise<Block>;
+  createRecurringBlocks(blockData: InsertBlock, dates: string[]): Promise<Block[]>;
   updateBlock(id: string, block: Partial<InsertBlock>): Promise<Block | undefined>;
   deleteBlock(id: string): Promise<boolean>;
 
@@ -69,7 +70,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteStudent(id: string): Promise<boolean> {
     const result = await db.delete(students).where(eq(students.id, id));
-    return result.rowCount > 0;
+    return (result.rowCount || 0) > 0;
   }
 
   // Aides
@@ -94,7 +95,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAide(id: string): Promise<boolean> {
     const result = await db.delete(aides).where(eq(aides.id, id));
-    return result.rowCount > 0;
+    return (result.rowCount || 0) > 0;
   }
 
   // Activities
@@ -119,7 +120,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteActivity(id: string): Promise<boolean> {
     const result = await db.delete(activities).where(eq(activities.id, id));
-    return result.rowCount > 0;
+    return (result.rowCount || 0) > 0;
   }
 
   // Blocks
@@ -140,6 +141,36 @@ export class DatabaseStorage implements IStorage {
     return block;
   }
 
+  async createRecurringBlocks(blockData: InsertBlock, dates: string[]): Promise<Block[]> {
+    return await db.transaction(async (tx) => {
+      const createdBlocks: Block[] = [];
+      
+      try {
+        for (const date of dates) {
+          const blockForDate: InsertBlock = {
+            startTime: blockData.startTime,
+            endTime: blockData.endTime,
+            activityId: blockData.activityId,
+            studentIds: blockData.studentIds || [],
+            aideIds: blockData.aideIds || [],
+            notes: blockData.notes,
+            recurrence: blockData.recurrence,
+            date,
+          };
+          
+          const [createdBlock] = await tx.insert(blocks).values(blockForDate).returning();
+          createdBlocks.push(createdBlock);
+        }
+        
+        return createdBlocks;
+      } catch (error) {
+        // Transaction will automatically rollback on error
+        // All blocks created so far will be undone
+        throw new Error(`Failed to create recurring blocks atomically: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    });
+  }
+
   async updateBlock(id: string, updateData: Partial<InsertBlock>): Promise<Block | undefined> {
     const [updated] = await db.update(blocks).set(updateData).where(eq(blocks.id, id)).returning();
     return updated || undefined;
@@ -147,7 +178,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteBlock(id: string): Promise<boolean> {
     const result = await db.delete(blocks).where(eq(blocks.id, id));
-    return result.rowCount > 0;
+    return (result.rowCount || 0) > 0;
   }
 
   // Templates
@@ -167,7 +198,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteTemplate(id: string): Promise<boolean> {
     const result = await db.delete(templates).where(eq(templates.id, id));
-    return result.rowCount > 0;
+    return (result.rowCount || 0) > 0;
   }
 }
 

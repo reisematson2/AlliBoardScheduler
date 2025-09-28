@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertStudentSchema, insertAideSchema, insertActivitySchema, insertBlockSchema, insertTemplateSchema } from "@shared/schema";
+import { parseRecurrencePattern, generateRecurrenceDates } from "@shared/recurrence-utils";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -190,8 +191,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/blocks", async (req, res) => {
     try {
       const data = insertBlockSchema.parse(req.body);
-      const block = await storage.createBlock(data);
-      res.json(block);
+      
+      // Parse recurrence pattern (handle undefined case)
+      const recurrencePattern = parseRecurrencePattern(data.recurrence || '{"type":"none"}');
+      
+      if (recurrencePattern.type === 'none') {
+        // Single block creation
+        const block = await storage.createBlock(data);
+        res.json({ blocks: [block], count: 1 });
+      } else {
+        // Recurrence block creation with atomicity
+        const dates = generateRecurrenceDates(data.date, recurrencePattern, 100);
+        
+        try {
+          // Create all blocks in a transaction-like manner
+          const blocks = await storage.createRecurringBlocks(data, dates);
+          res.json({ blocks, count: blocks.length });
+        } catch (error) {
+          // If creation fails, storage should handle cleanup
+          throw new Error("Failed to create recurring blocks");
+        }
+      }
     } catch (error) {
       if (error instanceof z.ZodError) {
         res.status(400).json({ message: "Invalid block data", errors: error.errors });

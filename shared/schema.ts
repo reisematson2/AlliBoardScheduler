@@ -1,7 +1,16 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, json } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, json, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// Recurrence pattern schema
+export const recurrencePatternSchema = z.object({
+  type: z.enum(['none', 'daily', 'weekly', 'custom']),
+  interval: z.number().min(1).optional(), // Every N days/weeks
+  daysOfWeek: z.array(z.number().min(0).max(6)).optional(), // 0-6 (Sunday-Saturday)
+  endDate: z.string().optional(), // ISO date string for when recurrence ends
+  maxOccurrences: z.number().min(1).optional(), // Max number of occurrences
+});
 
 export const students = pgTable("students", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -32,7 +41,7 @@ export const blocks = pgTable("blocks", {
   studentIds: json("student_ids").$type<string[]>().notNull().default([]),
   aideIds: json("aide_ids").$type<string[]>().notNull().default([]),
   notes: text("notes").default(""),
-  recurrence: text("recurrence").default("none"),
+  recurrence: text("recurrence").notNull().default('{"type":"none"}'),
   date: text("date").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -69,6 +78,7 @@ export const insertTemplateSchema = createInsertSchema(templates).omit({
   createdAt: true,
 });
 
+export type RecurrencePattern = z.infer<typeof recurrencePatternSchema>;
 export type Student = typeof students.$inferSelect;
 export type InsertStudent = z.infer<typeof insertStudentSchema>;
 export type Aide = typeof aides.$inferSelect;
