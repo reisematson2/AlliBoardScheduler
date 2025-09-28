@@ -52,7 +52,16 @@ export default function Schedule() {
   });
 
   const { data: blocks = [] } = useQuery<Block[]>({
-    queryKey: ["/api/blocks", { date: selectedDate }],
+    queryKey: ["/api/blocks", selectedDate],
+    queryFn: async () => {
+      const res = await fetch(`/api/blocks?date=${selectedDate}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        throw new Error(`${res.status}: ${res.statusText}`);
+      }
+      return res.json();
+    },
   });
 
   const conflicts = detectConflicts(blocks, students, aides);

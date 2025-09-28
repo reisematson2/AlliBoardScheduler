@@ -94,13 +94,22 @@ export function EntityModal({ open, onClose, type, entity }: EntityModalProps) {
     }
   }, [entity, form, type]);
 
+  const getPlural = (entityType: string) => {
+    switch (entityType) {
+      case "activity":
+        return "activities";
+      default:
+        return `${entityType}s`;
+    }
+  };
+
   const createMutation = useMutation({
     mutationFn: (data: any) => {
-      const endpoint = `/api/${type}s`;
+      const endpoint = `/api/${getPlural(type)}`;
       return apiRequest("POST", endpoint, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/${type}s`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/${getPlural(type)}`] });
       toast({ title: `${type.charAt(0).toUpperCase() + type.slice(1)} created successfully` });
       onClose();
     },
@@ -111,11 +120,11 @@ export function EntityModal({ open, onClose, type, entity }: EntityModalProps) {
 
   const updateMutation = useMutation({
     mutationFn: (data: any) => {
-      const endpoint = `/api/${type}s/${entity!.id}`;
+      const endpoint = `/api/${getPlural(type)}/${entity!.id}`;
       return apiRequest("PUT", endpoint, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/${type}s`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/${getPlural(type)}`] });
       toast({ title: `${type.charAt(0).toUpperCase() + type.slice(1)} updated successfully` });
       onClose();
     },

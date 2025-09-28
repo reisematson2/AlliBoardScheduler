@@ -107,7 +107,7 @@ export function BlockModal({
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/blocks", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks", currentDate] });
       toast({ title: "Schedule block created successfully" });
       onClose();
     },
@@ -119,7 +119,7 @@ export function BlockModal({
   const updateMutation = useMutation({
     mutationFn: (data: any) => apiRequest("PUT", `/api/blocks/${block!.id}`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks", currentDate] });
       toast({ title: "Schedule block updated successfully" });
       onClose();
     },
@@ -131,7 +131,7 @@ export function BlockModal({
   const deleteMutation = useMutation({
     mutationFn: () => apiRequest("DELETE", `/api/blocks/${block!.id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks", currentDate] });
       toast({ title: "Schedule block deleted successfully" });
       onClose();
     },
