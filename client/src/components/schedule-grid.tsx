@@ -192,18 +192,16 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
     const destinationId = result.destination.droppableId;
     let newStartTime: string;
 
-    if (destinationId === "schedule-grid") {
-      // If dropped on the main grid, calculate time based on the position
-      // For now, we'll keep the block at its current time since we can't determine
-      // the exact time slot without more complex calculation
-      return;
-    } else if (destinationId.startsWith("timeslot-")) {
-      // If we had individual time slot droppables, parse the time
+    if (destinationId.startsWith("timeslot-")) {
+      // Get the actual time slot from the timeSlots array
       const timeSlotIndex = parseInt(destinationId.replace("timeslot-", ""));
-      const startHour = 8 + timeSlotIndex;
-      newStartTime = `${startHour.toString().padStart(2, "0")}:00`;
+      if (timeSlotIndex >= 0 && timeSlotIndex < timeSlots.length) {
+        newStartTime = timeSlots[timeSlotIndex];
+      } else {
+        return; // Invalid time slot index
+      }
     } else {
-      return;
+      return; // Not a valid drop target
     }
 
     // Calculate the duration of the block
