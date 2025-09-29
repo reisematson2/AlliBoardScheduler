@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -21,13 +21,14 @@ import {
   FileText,
 } from "lucide-react";
 import { Block, Student, Aide, Activity } from "@shared/schema";
-import { getCurrentDate, formatTimeDisplay, formatDateDisplay, generateTimeSlots } from "@/lib/time-utils";
+import { getCurrentDate, formatTimeDisplay, formatDateDisplay, generateTimeSlots, timeToMinutes, minutesToTime } from "@/lib/time-utils";
 import { detectConflicts } from "@/lib/conflicts";
 import { useToast } from "@/hooks/use-toast";
 
 export default function PrintView() {
   const [selectedDate, setSelectedDate] = useState(getCurrentDate());
   const [printMode, setPrintMode] = useState<'master' | 'individual'>('master');
+  const [printFormat, setPrintFormat] = useState<'list' | 'calendar'>('list');
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   const [selectedAides, setSelectedAides] = useState<string[]>([]);
   const [showStudents, setShowStudents] = useState(true);
@@ -177,6 +178,288 @@ export default function PrintView() {
     window.print();
   };
 
+  // Calendar format rendering functions
+  const getWeekDates = (selectedDate: string): string[] => {
+    const date = new Date(selectedDate + 'T00:00:00');
+    const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    
+    // Find the Monday of the week containing the selected date
+    const startOfWeek = new Date(date);
+    const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Sunday = 0, so go back 6 days to get Monday
+    startOfWeek.setDate(date.getDate() + daysToMonday);
+    
+    const weekDates = [];
+    for (let i = 0; i < 5; i++) { // Only 5 days: Monday to Friday
+      const weekDate = new Date(startOfWeek);
+      weekDate.setDate(startOfWeek.getDate() + i);
+      weekDates.push(weekDate.toISOString().split('T')[0]);
+    }
+    return weekDates;
+  };
+
+  const getDayNames = (): string[] => {
+    return ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  };
+
+  const getBlockPosition = (block: Block, timeSlots: string[]): { top: number; minHeight: number } => {
+    const startMinutes = timeToMinutes(block.startTime);
+    const endMinutes = timeToMinutes(block.endTime);
+    const firstSlotMinutes = timeToMinutes(timeSlots[0]);
+    
+    // Calculate position relative to the first time slot
+    const top = Math.max(0, (startMinutes - firstSlotMinutes) * 2); // 2px per minute
+    const minHeight = Math.max(40, (endMinutes - startMinutes) * 2); // Minimum height based on duration
+    
+    return { top, minHeight };
+  };
+
+  const renderCalendarDayView = (filteredBlocks: Block[]) => {
+    const timeSlots = generateTimeSlots();
+    const dayBlocks = filteredBlocks.filter(block => block.date === selectedDate);
+    
+    // Sort blocks by start time
+    const sortedBlocks = dayBlocks.sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+    
+    return (
+      <div className="calendar-print-view">
+        <div className="border border-gray-300">
+          {/* Header */}
+          <div className="grid grid-cols-[80px_1fr] gap-0">
+            <div className="bg-gray-100 border-b border-gray-300 p-2 text-center font-semibold">
+              Time
+            </div>
+            <div className="bg-gray-100 border-b border-gray-300 p-2 text-center font-semibold">
+              {formatDateDisplay(selectedDate)}
+            </div>
+          </div>
+          
+          {/* Schedule blocks */}
+          {sortedBlocks.map((block) => {
+            const activity = getActivity(block.activityId);
+            const conflict = conflicts.get(block.id);
+            
+            return (
+              <div key={block.id} className="grid grid-cols-[80px_1fr] gap-0 border-b border-gray-300">
+                {/* Time column */}
+                <div className="bg-gray-50 border-r border-gray-300 p-2 text-sm font-medium">
+                  {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
+                </div>
+                
+                {/* Activity block */}
+                <div 
+                  className="p-3 text-sm"
+                  style={{
+                    backgroundColor: activity?.color === 'blue' ? '#dbeafe' :
+                                   activity?.color === 'green' ? '#dcfce7' :
+                                   activity?.color === 'purple' ? '#e9d5ff' :
+                                   activity?.color === 'orange' ? '#fed7aa' :
+                                   activity?.color === 'teal' ? '#ccfbf1' :
+                                   activity?.color === 'indigo' ? '#e0e7ff' :
+                                   activity?.color === 'pink' ? '#fce7f3' :
+                                   activity?.color === 'yellow' ? '#fef3c7' :
+                                   activity?.color === 'red' ? '#fee2e2' :
+                                   activity?.color === 'gray' ? '#f3f4f6' : '#f3f4f6'
+                  }}
+                >
+                  <div className="font-semibold text-base mb-2">
+                    {activity?.title || "Unknown Activity"}
+                  </div>
+                  
+                  {block.studentIds.length > 0 && showStudents && (
+                    <div className="mb-2">
+                      <div className="font-medium text-sm mb-1">Students:</div>
+                      <div className="flex flex-wrap gap-1">
+                        {block.studentIds.map((studentId) => {
+                          const student = getStudent(studentId);
+                          return student ? (
+                            <span key={studentId} className="text-xs bg-blue-100 px-2 py-1 rounded">
+                              {student.name}
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {block.aideIds.length > 0 && showAides && (
+                    <div className="mb-2">
+                      <div className="font-medium text-sm mb-1">Aides:</div>
+                      <div className="flex flex-wrap gap-1">
+                        {block.aideIds.map((aideId) => {
+                          const aide = getAide(aideId);
+                          return aide ? (
+                            <span key={aideId} className="text-xs bg-green-100 px-2 py-1 rounded">
+                              {aide.name}
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {conflict && showConflicts && (
+                    <div className="mb-2 text-red-600 text-sm">
+                      ⚠ {conflict.type === 'aide' ? 'Aide Conflict' : 'Student Conflict'}
+                    </div>
+                  )}
+                  
+                  {block.notes && showNotes && (
+                    <div className="text-sm opacity-75">
+                      📝 {block.notes}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCalendarWeekView = (filteredBlocks: Block[]) => {
+    const weekDates = getWeekDates(selectedDate);
+    const dayNames = getDayNames();
+    
+    return (
+      <div className="calendar-print-view">
+        <div className="border border-gray-300">
+          {/* Header row */}
+          <div className="grid grid-cols-[80px_repeat(5,1fr)] gap-0">
+            <div className="bg-gray-100 border-b border-gray-300 p-2 text-center font-semibold">
+              Time
+            </div>
+            {dayNames.map((dayName, index) => (
+              <div key={dayName} className="bg-gray-100 border-b border-gray-300 p-2 text-center font-semibold">
+                <div>{dayName}</div>
+                <div className="text-sm font-normal text-gray-600">
+                  {formatDateDisplay(weekDates[index])}
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {/* Schedule blocks grouped by day */}
+          {weekDates.map((date) => {
+            const dayBlocks = filteredBlocks
+              .filter(block => block.date === date)
+              .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+            
+            if (dayBlocks.length === 0) {
+              return (
+                <div key={date} className="grid grid-cols-[80px_repeat(5,1fr)] gap-0 border-b border-gray-300">
+                  <div className="bg-gray-50 border-r border-gray-300 p-2 text-sm font-medium text-gray-500">
+                    No sessions
+                  </div>
+                  {Array.from({ length: 5 }, (_, i) => (
+                    <div key={i} className="p-2 text-sm text-gray-500 text-center">
+                      {i === weekDates.indexOf(date) ? "No sessions scheduled" : ""}
+                    </div>
+                  ))}
+                </div>
+              );
+            }
+            
+            return dayBlocks.map((block, blockIndex) => {
+              const activity = getActivity(block.activityId);
+              const conflict = conflicts.get(block.id);
+              const dayIndex = weekDates.indexOf(date);
+              
+              return (
+                <div key={block.id} className="grid grid-cols-[80px_repeat(5,1fr)] gap-0 border-b border-gray-300">
+                  {/* Time column */}
+                  <div className="bg-gray-50 border-r border-gray-300 p-2 text-sm font-medium">
+                    {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
+                  </div>
+                  
+                  {/* Day columns */}
+                  {weekDates.map((dayDate, colIndex) => {
+                    if (colIndex === dayIndex) {
+                      // This is the day with the block
+                      return (
+                        <div 
+                          key={dayDate}
+                          className="p-3 text-sm"
+                          style={{
+                            backgroundColor: activity?.color === 'blue' ? '#dbeafe' :
+                                           activity?.color === 'green' ? '#dcfce7' :
+                                           activity?.color === 'purple' ? '#e9d5ff' :
+                                           activity?.color === 'orange' ? '#fed7aa' :
+                                           activity?.color === 'teal' ? '#ccfbf1' :
+                                           activity?.color === 'indigo' ? '#e0e7ff' :
+                                           activity?.color === 'pink' ? '#fce7f3' :
+                                           activity?.color === 'yellow' ? '#fef3c7' :
+                                           activity?.color === 'red' ? '#fee2e2' :
+                                           activity?.color === 'gray' ? '#f3f4f6' : '#f3f4f6'
+                          }}
+                        >
+                          <div className="font-semibold text-base mb-2">
+                            {activity?.title || "Unknown Activity"}
+                          </div>
+                          
+                          {block.studentIds.length > 0 && showStudents && (
+                            <div className="mb-2">
+                              <div className="font-medium text-sm mb-1">Students:</div>
+                              <div className="flex flex-wrap gap-1">
+                                {block.studentIds.map((studentId) => {
+                                  const student = getStudent(studentId);
+                                  return student ? (
+                                    <span key={studentId} className="text-xs bg-blue-100 px-2 py-1 rounded">
+                                      {student.name}
+                                    </span>
+                                  ) : null;
+                                })}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {block.aideIds.length > 0 && showAides && (
+                            <div className="mb-2">
+                              <div className="font-medium text-sm mb-1">Aides:</div>
+                              <div className="flex flex-wrap gap-1">
+                                {block.aideIds.map((aideId) => {
+                                  const aide = getAide(aideId);
+                                  return aide ? (
+                                    <span key={aideId} className="text-xs bg-green-100 px-2 py-1 rounded">
+                                      {aide.name}
+                                    </span>
+                                  ) : null;
+                                })}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {conflict && showConflicts && (
+                            <div className="mb-2 text-red-600 text-sm">
+                              ⚠ {conflict.type === 'aide' ? 'Aide Conflict' : 'Student Conflict'}
+                            </div>
+                          )}
+                          
+                          {block.notes && showNotes && (
+                            <div className="text-sm opacity-75">
+                              📝 {block.notes}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    } else {
+                      // Empty column for other days
+                      return (
+                        <div key={dayDate} className="p-2 text-sm text-gray-400 text-center">
+                          {/* Empty space */}
+                        </div>
+                      );
+                    }
+                  })}
+                </div>
+              );
+            });
+          })}
+        </div>
+      </div>
+    );
+  };
+
   // Bulk print all student schedules
   const handleBulkPrintStudents = () => {
     if (students.length === 0) {
@@ -292,6 +575,19 @@ export default function PrintView() {
                 <SelectContent>
                   <SelectItem value="master">Master</SelectItem>
                   <SelectItem value="individual">Individual</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {/* Print Format Selector */}
+            <div className="flex items-center space-x-2">
+              <Select value={printFormat} onValueChange={(value: 'list' | 'calendar') => setPrintFormat(value)}>
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="list">List Format</SelectItem>
+                  <SelectItem value="calendar">Calendar Format</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -537,144 +833,159 @@ export default function PrintView() {
                   );
                 }
                 
-                return (
-                <div className="space-y-4">
-                  {timeSlots.map((timeSlot) => {
-                    const timeBlocks = getBlocksByTimeSlot(timeSlot);
-                    
-                    return (
-                      <div key={timeSlot} className="border-b border-border last:border-b-0 pb-4 last:pb-0">
-                        <div className="flex items-start space-x-6">
-                          {/* Time */}
-                          <div className="w-24 flex-shrink-0">
-                            <p className="text-lg font-medium text-foreground print:text-black">
-                              {formatTimeDisplay(timeSlot)}
-                            </p>
-                          </div>
-
-                          {/* Sessions */}
-                          <div className="flex-1">
-                            {timeBlocks.length === 0 ? (
-                              <p className="text-muted-foreground italic print:text-gray-500">
-                                No sessions
-                              </p>
-                            ) : (
-                              <div className="space-y-3">
-                                {timeBlocks.map((block) => {
-                                  const activity = getActivity(block.activityId);
-                                  const conflict = conflicts.get(block.id);
-
-                                  return (
-                                    <div
-                                      key={block.id}
-                                      className="border border-border rounded-lg p-4 print:border-gray-300"
-                                      data-testid={`print-block-${block.id}`}
-                                    >
-                                      <div className="flex items-center justify-between mb-3">
-                                        <div className="flex items-center space-x-3">
-                                          <h3 className="text-lg font-semibold text-foreground print:text-black">
-                                            {activity?.title || "Unknown Activity"}
-                                          </h3>
-                                          <div className="text-sm text-muted-foreground print:text-gray-600">
-                                            {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
-                                          </div>
-                                        </div>
-                                        
-                                        <div className="flex items-center space-x-2">
-                                          {conflict && showConflicts && (
-                                            <div className="flex items-center space-x-1">
-                                              {conflict.type === "aide" ? (
-                                                <AlertCircle className="h-4 w-4 text-red-600" />
-                                              ) : (
-                                                <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                                              )}
-                                              <span className="text-xs text-muted-foreground print:text-gray-600">
-                                                {conflict.type === "aide" ? "Aide Conflict" : "Student Conflict"}
-                                              </span>
-                                            </div>
-                                          )}
-                                          {block.notes && showNotes && (
-                                            <div className="flex items-center space-x-1">
-                                              <StickyNote className="h-4 w-4 text-muted-foreground" />
-                                              <span className="text-xs text-muted-foreground print:text-gray-600">
-                                                Has Notes
-                                              </span>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-
-                                      {/* Students and Aides */}
-                                      <div className="space-y-2">
-                                        {block.studentIds.length > 0 && showStudents && (
-                                          <div>
-                                            <p className="text-sm font-medium text-foreground print:text-black mb-1">
-                                              Students:
-                                            </p>
-                                            <div className="flex flex-wrap gap-2">
-                                              {block.studentIds.map((studentId) => {
-                                                const student = getStudent(studentId);
-                                                if (!student) return null;
-                                                return (
-                                                  <Badge
-                                                    key={studentId}
-                                                    variant="secondary"
-                                                    className={`print:bg-gray-100 print:text-black ${getEntityBadgeClass(student.color)}`}
-                                                  >
-                                                    {student.name}
-                                                  </Badge>
-                                                );
-                                              })}
-                                            </div>
-                                          </div>
-                                        )}
-
-                                        {block.aideIds.length > 0 && showAides && (
-                                          <div>
-                                            <p className="text-sm font-medium text-foreground print:text-black mb-1">
-                                              Aides:
-                                            </p>
-                                            <div className="flex flex-wrap gap-2">
-                                              {block.aideIds.map((aideId) => {
-                                                const aide = getAide(aideId);
-                                                if (!aide) return null;
-                                                return (
-                                                  <Badge
-                                                    key={aideId}
-                                                    variant="secondary"
-                                                    className={`print:bg-gray-100 print:text-black ${getEntityBadgeClass(aide.color)}`}
-                                                  >
-                                                    {aide.name}
-                                                  </Badge>
-                                                );
-                                              })}
-                                            </div>
-                                          </div>
-                                        )}
-
-                                        {block.notes && showNotes && (
-                                          <div>
-                                            <p className="text-sm font-medium text-foreground print:text-black mb-1">
-                                              Notes:
-                                            </p>
-                                            <p className="text-sm text-muted-foreground print:text-gray-700">
-                                              {block.notes}
-                                            </p>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
+                // Render based on print format
+                if (printFormat === 'calendar') {
+                  // For calendar format, we need to determine if we're showing a single day or week
+                  // For now, we'll show the week view if we have blocks spanning multiple days
+                  const uniqueDates = [...new Set(filteredBlocks.map(block => block.date))];
+                  const isWeekView = uniqueDates.length > 1;
+                  
+                  if (isWeekView) {
+                    return renderCalendarWeekView(filteredBlocks);
+                  } else {
+                    return renderCalendarDayView(filteredBlocks);
+                  }
+                } else {
+                  // List format (original)
+                  return (
+                    <div className="space-y-4">
+                      {timeSlots.map((timeSlot) => {
+                        const timeBlocks = getBlocksByTimeSlot(timeSlot);
+                        
+                        return (
+                          <div key={timeSlot} className="border-b border-border last:border-b-0 pb-4 last:pb-0">
+                            <div className="flex items-start space-x-6">
+                              {/* Time */}
+                              <div className="w-24 flex-shrink-0">
+                                <p className="text-lg font-medium text-foreground print:text-black">
+                                  {formatTimeDisplay(timeSlot)}
+                                </p>
                               </div>
-                            )}
+
+                              {/* Sessions */}
+                              <div className="flex-1">
+                                {timeBlocks.length === 0 ? (
+                                  <p className="text-muted-foreground italic print:text-gray-500">
+                                    No sessions
+                                  </p>
+                                ) : (
+                                  <div className="space-y-3">
+                                    {timeBlocks.map((block) => {
+                                      const activity = getActivity(block.activityId);
+                                      const conflict = conflicts.get(block.id);
+
+                                      return (
+                                        <div
+                                          key={block.id}
+                                          className="border border-border rounded-lg p-4 print:border-gray-300"
+                                          data-testid={`print-block-${block.id}`}
+                                        >
+                                          <div className="flex items-center justify-between mb-3">
+                                            <div className="flex items-center space-x-3">
+                                              <h3 className="text-lg font-semibold text-foreground print:text-black">
+                                                {activity?.title || "Unknown Activity"}
+                                              </h3>
+                                              <div className="text-sm text-muted-foreground print:text-gray-600">
+                                                {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
+                                              </div>
+                                            </div>
+                                            
+                                            <div className="flex items-center space-x-2">
+                                              {conflict && showConflicts && (
+                                                <div className="flex items-center space-x-1">
+                                                  {conflict.type === "aide" ? (
+                                                    <AlertCircle className="h-4 w-4 text-red-600" />
+                                                  ) : (
+                                                    <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                                                  )}
+                                                  <span className="text-xs text-muted-foreground print:text-gray-600">
+                                                    {conflict.type === "aide" ? "Aide Conflict" : "Student Conflict"}
+                                                  </span>
+                                                </div>
+                                              )}
+                                              {block.notes && showNotes && (
+                                                <div className="flex items-center space-x-1">
+                                                  <StickyNote className="h-4 w-4 text-muted-foreground" />
+                                                  <span className="text-xs text-muted-foreground print:text-gray-600">
+                                                    Has Notes
+                                                  </span>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          {/* Students and Aides */}
+                                          <div className="space-y-2">
+                                            {block.studentIds.length > 0 && showStudents && (
+                                              <div>
+                                                <p className="text-sm font-medium text-foreground print:text-black mb-1">
+                                                  Students:
+                                                </p>
+                                                <div className="flex flex-wrap gap-2">
+                                                  {block.studentIds.map((studentId) => {
+                                                    const student = getStudent(studentId);
+                                                    if (!student) return null;
+                                                    return (
+                                                      <Badge
+                                                        key={studentId}
+                                                        variant="secondary"
+                                                        className={`print:bg-gray-100 print:text-black ${getEntityBadgeClass(student.color)}`}
+                                                      >
+                                                        {student.name}
+                                                      </Badge>
+                                                    );
+                                                  })}
+                                                </div>
+                                              </div>
+                                            )}
+
+                                            {block.aideIds.length > 0 && showAides && (
+                                              <div>
+                                                <p className="text-sm font-medium text-foreground print:text-black mb-1">
+                                                  Aides:
+                                                </p>
+                                                <div className="flex flex-wrap gap-2">
+                                                  {block.aideIds.map((aideId) => {
+                                                    const aide = getAide(aideId);
+                                                    if (!aide) return null;
+                                                    return (
+                                                      <Badge
+                                                        key={aideId}
+                                                        variant="secondary"
+                                                        className={`print:bg-gray-100 print:text-black ${getEntityBadgeClass(aide.color)}`}
+                                                      >
+                                                        {aide.name}
+                                                      </Badge>
+                                                    );
+                                                  })}
+                                                </div>
+                                              </div>
+                                            )}
+
+                                            {block.notes && showNotes && (
+                                              <div>
+                                                <p className="text-sm font-medium text-foreground print:text-black mb-1">
+                                                  Notes:
+                                                </p>
+                                                <p className="text-sm text-muted-foreground print:text-gray-700">
+                                                  {block.notes}
+                                                </p>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                );
+                        );
+                      })}
+                    </div>
+                  );
+                }
               })()}
             </div>
           </Card>
