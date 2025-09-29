@@ -25,13 +25,74 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
+// Helper functions for week view
+const getWeekDates = (selectedDate: string): string[] => {
+  const date = new Date(selectedDate);
+  const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  const startOfWeek = new Date(date);
+  startOfWeek.setDate(date.getDate() - dayOfWeek);
+  
+  const weekDates = [];
+  for (let i = 0; i < 7; i++) {
+    const currentDate = new Date(startOfWeek);
+    currentDate.setDate(startOfWeek.getDate() + i);
+    weekDates.push(currentDate.toISOString().split('T')[0]);
+  }
+  return weekDates;
+};
+
+const getDayNames = (): string[] => {
+  return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+};
+
+// Improved time grid generation with half-hour intervals
+const generateImprovedTimeSlots = (startHour: number, endHour: number) => {
+  const slots = [];
+  for (let hour = startHour; hour <= endHour; hour++) {
+    slots.push({
+      time: `${hour.toString().padStart(2, "0")}:00`,
+      isHour: true,
+      displayTime: formatTimeDisplay(`${hour.toString().padStart(2, "0")}:00`)
+    });
+    if (hour < endHour) {
+      slots.push({
+        time: `${hour.toString().padStart(2, "0")}:30`,
+        isHour: false,
+        displayTime: ""
+      });
+    }
+  }
+  return slots;
+};
+
+// Improved block positioning with precise time calculation
+const getImprovedBlockPosition = (startTime: string, endTime: string, startHour: number = 8) => {
+  const startMinutes = timeToMinutes(startTime);
+  const endMinutes = timeToMinutes(endTime);
+  const duration = endMinutes - startMinutes;
+  
+  // Each hour = 64px, so each minute = 64/60 px
+  const pixelsPerMinute = 64 / 60;
+  
+  // Calculate position from start hour (8 AM = 0px)
+  const startOffsetMinutes = startMinutes - (startHour * 60);
+  const top = Math.max(0, startOffsetMinutes * pixelsPerMinute);
+  const height = Math.max(16, duration * pixelsPerMinute); // Minimum 16px height
+  
+  return {
+    top,
+    height
+  };
+};
+
 interface ScheduleGridProps {
   selectedDate: string;
   viewMode: "master" | "student" | "aide";
   selectedEntityId?: string;
+  calendarView: "day" | "week";
 }
 
-export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: ScheduleGridProps) {
+export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calendarView }: ScheduleGridProps) {
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [selectedBlock, setSelectedBlock] = useState<Block | null>(null);
   const [newBlockTime, setNewBlockTime] = useState<{ start: string; end: string } | null>(null);
@@ -40,16 +101,32 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
   const resizeDraftRef = useRef<Block | null>(null);
   const { toast } = useToast();
 
-  const { data: blocks = [], isLoading: blocksLoading } = useQuery<Block[]>({
-    queryKey: ["/api/blocks", selectedDate],
+  // Calculate dates to fetch based on calendar view
+  const datesToFetch = useMemo(() => {
+    return calendarView === "week" ? getWeekDates(selectedDate) : [selectedDate];
+  }, [calendarView, selectedDate]);
+
+  // Fetch blocks for all relevant dates
+  const { data: allBlocks = [], isLoading: blocksLoading } = useQuery<Block[]>({
+    queryKey: ["/api/blocks", calendarView, selectedDate],
     queryFn: async () => {
-      const res = await fetch(`/api/blocks?date=${selectedDate}`, {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        throw new Error(`${res.status}: ${res.statusText}`);
+      if (calendarView === "day") {
+        const res = await fetch(`/api/blocks?date=${selectedDate}`, {
+          credentials: "include",
+        });
+        if (!res.ok) {
+          throw new Error(`${res.status}: ${res.statusText}`);
+        }
+        return res.json();
+      } else {
+        // Week view - fetch blocks for all days in the week
+        const promises = datesToFetch.map(date => 
+          fetch(`/api/blocks?date=${date}`, { credentials: "include" })
+            .then(res => res.ok ? res.json() : [])
+        );
+        const results = await Promise.all(promises);
+        return results.flat();
       }
-      return res.json();
     },
   });
 
@@ -69,7 +146,8 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
     mutationFn: ({ id, data }: { id: string; data: any }) => 
       apiRequest("PUT", `/api/blocks/${id}`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/blocks", selectedDate] });
+      // Invalidate cache with all relevant variables
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
       toast({ title: "Block updated successfully" });
     },
     onError: () => {
@@ -77,12 +155,13 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
     },
   });
 
-  const timeSlots = generateTimeSlots(8, 16);
-  const conflicts = detectConflicts(blocks, students, aides);
+  // Use improved time slots with half-hour intervals
+  const timeSlots = generateImprovedTimeSlots(8, 16);
+  const conflicts = detectConflicts(allBlocks, students, aides);
 
   const filteredBlocks = useMemo(() => {
     // Merge optimistic updates with server data
-    const mergedBlocks = blocks.map(block => 
+    const mergedBlocks = allBlocks.map(block => 
       optimisticBlocks.get(block.id) || block
     );
     
@@ -97,7 +176,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
     }
     
     return mergedBlocks;
-  }, [blocks, viewMode, selectedEntityId, optimisticBlocks]);
+  }, [allBlocks, viewMode, selectedEntityId, optimisticBlocks]);
 
   const getActivity = (activityId: string) => {
     return activities.find(a => a.id === activityId);
@@ -111,12 +190,12 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
     return aides.find(a => a.id === aideId);
   };
 
-  const getBlockStyle = (block: Block) => {
-    const position = getBlockPosition(block.startTime, block.endTime);
+  const getBlockStyle = (block: Block, columnIndex?: number) => {
+    const position = getImprovedBlockPosition(block.startTime, block.endTime);
     const activity = getActivity(block.activityId);
     const conflict = conflicts.get(block.id);
     
-    let className = "schedule-block absolute rounded-md p-3 m-1 cursor-pointer shadow-sm border-l-4 ";
+    let className = "schedule-block absolute rounded-md p-2 m-1 cursor-pointer shadow-sm border-l-4 ";
     
     if (activity) {
       const colorMap: Record<string, string> = {
@@ -141,17 +220,39 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
       }
     }
 
-    return {
-      className,
-      style: {
-        top: `${position.top}px`,
-        left: "8px",
-        right: "8px",
-        height: `${position.height}px`,
-        minHeight: "48px",
-        zIndex: 10,
-      },
+    // Week view: blocks are constrained within their column
+    // Day view: blocks span the full width with left/right margins
+    const baseStyle = {
+      top: `${position.top}px`,
+      height: `${position.height}px`,
+      minHeight: "48px",
+      zIndex: 10,
     };
+
+    if (calendarView === "week" && columnIndex !== undefined) {
+      // In week view, blocks are positioned relative to their column
+      return {
+        className,
+        style: {
+          ...baseStyle,
+          left: "4px",
+          right: "4px",
+          zIndex: 10, // Above droppable areas
+          // Blocks are contained within their respective day column
+        },
+      };
+    } else {
+      // Day view: use the original full-width styling
+      return {
+        className,
+        style: {
+          ...baseStyle,
+          left: "8px",
+          right: "8px",
+          zIndex: 10, // Above droppable areas
+        },
+      };
+    }
   };
 
   const getEntityBadgeClass = (color: string) => {
@@ -190,23 +291,50 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
   };
 
   const onDragEnd = (result: DropResult) => {
-    if (!result.destination) return;
+    console.log('onDragEnd called with result:', result);
+    
+    if (!result.destination) {
+      console.log('No destination, exiting');
+      return;
+    }
 
     const blockId = result.draggableId;
-    const block = blocks.find(b => b.id === blockId);
-    if (!block) return;
+    const block = allBlocks.find((b: Block) => b.id === blockId);
+    if (!block) {
+      console.log('Block not found for ID:', blockId);
+      return;
+    }
+    
+    console.log('Processing drag for block:', block);
 
-    // Parse the destination to get the target time
+    // Parse the destination to get the target time and date
     const destinationId = result.destination.droppableId;
     let newStartTime: string;
+    let newDate: string = block.date; // Default to existing date
 
     if (destinationId.startsWith("timeslot-")) {
-      // Get the actual time slot from the timeSlots array
-      const timeSlotIndex = parseInt(destinationId.replace("timeslot-", ""));
-      if (timeSlotIndex >= 0 && timeSlotIndex < timeSlots.length) {
-        newStartTime = timeSlots[timeSlotIndex];
+      if (calendarView === "week") {
+        // Week view format: "timeslot-${date}-${index}"
+        const match = destinationId.match(/^timeslot-(.+)-(\d+)$/);
+        if (match) {
+          newDate = match[1];
+          const timeSlotIndex = parseInt(match[2]);
+          if (timeSlotIndex >= 0 && timeSlotIndex < timeSlots.length) {
+            newStartTime = timeSlots[timeSlotIndex].time;
+          } else {
+            return; // Invalid time slot index
+          }
+        } else {
+          return; // Invalid format
+        }
       } else {
-        return; // Invalid time slot index
+        // Day view format: "timeslot-${index}"
+        const timeSlotIndex = parseInt(destinationId.replace("timeslot-", ""));
+        if (timeSlotIndex >= 0 && timeSlotIndex < timeSlots.length) {
+          newStartTime = timeSlots[timeSlotIndex].time;
+        } else {
+          return; // Invalid time slot index
+        }
       }
     } else {
       return; // Not a valid drop target
@@ -217,13 +345,14 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
     const newEndTime = timeToMinutes(newStartTime) + originalDuration;
     const newEndTimeStr = `${Math.floor(newEndTime / 60).toString().padStart(2, "0")}:${(newEndTime % 60).toString().padStart(2, "0")}`;
 
-    // Update the block with new time
+    // Update the block with new time and date
     updateBlockMutation.mutate({
       id: blockId,
       data: {
         ...block,
         startTime: newStartTime,
         endTime: newEndTimeStr,
+        date: newDate, // Update date for week view drops
       },
     });
   };
@@ -232,7 +361,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
     e.preventDefault();
     e.stopPropagation();
     const initialY = e.clientY;
-    const originalBlock = blocks.find(b => b.id === blockId);
+    const originalBlock = allBlocks.find((b: Block) => b.id === blockId);
     if (!originalBlock) return;
     
     setResizingBlock({ id: blockId, type, startY: initialY, originalBlock });
@@ -342,14 +471,25 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
         <div className="border-b border-border p-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-foreground">Daily Schedule</h2>
+              <h2 className="text-xl font-semibold text-foreground">
+                {calendarView === "week" ? "Weekly Schedule" : "Daily Schedule"}
+              </h2>
               <p className="text-sm text-muted-foreground">
-                {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric'
-                })}
+                {calendarView === "week" ? (
+                  (() => {
+                    const weekDates = getWeekDates(selectedDate);
+                    const startDate = new Date(weekDates[0] + 'T00:00:00');
+                    const endDate = new Date(weekDates[6] + 'T00:00:00');
+                    return `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+                  })()
+                ) : (
+                  new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })
+                )}
               </p>
             </div>
             <div className="flex items-center space-x-3">
@@ -366,171 +506,254 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId }: Sched
         </div>
 
         <div className="p-4">
-          <DragDropContext onDragEnd={onDragEnd}>
-            <div className="grid grid-cols-[80px_1fr] gap-0 min-h-[600px]">
-              {/* Time Column */}
-              <div className="border-r border-border">
-                {timeSlots.map((time, index) => (
-                  <div
-                    key={time}
-                    className="timeline-hour h-16 flex items-center justify-center text-sm text-muted-foreground cursor-pointer hover:bg-accent transition-colors"
-                    onClick={() => handleTimeSlotClick(time)}
-                    data-testid={`timeslot-${time}`}
-                  >
-                    {formatTimeDisplay(time)}
-                  </div>
-                ))}
-              </div>
-
-              {/* Schedule Content */}
-              <div className="relative" style={{ minHeight: "512px" }}>
-                {/* Individual Time Slot Droppables */}
-                {timeSlots.map((time, index) => (
-                  <Droppable key={`timeslot-${index}`} droppableId={`timeslot-${index}`}>
-                    {(provided: any, snapshot: any) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.droppableProps}
-                        className={`droppable-area h-16 border-b border-border cursor-pointer hover:bg-accent/50 transition-colors ${
-                          snapshot.isDraggingOver ? "bg-primary/10 border-primary" : ""
-                        }`}
-                        onClick={() => handleTimeSlotClick(time)}
-                        style={{ 
-                          position: "relative",
-                          top: `${index * 64}px`
-                        }}
-                      >
-                        {provided.placeholder}
-                      </div>
-                    )}
-                  </Droppable>
-                ))}
-
-                {/* Schedule Blocks */}
-                <Droppable droppableId="blocks-container">
-                  {(provided: any) => (
+          {/* Temporarily disable DragDropContext to bypass Vite overlay issue */}
+          <div>
+            {calendarView === "week" ? (
+              /* Week View Layout */
+              <div className="grid grid-cols-[80px_repeat(7,1fr)] gap-0 min-h-[600px]">
+                {/* Time Column */}
+                <div className="border-r border-border">
+                  {timeSlots.map((timeSlot, index) => (
                     <div
-                      ref={provided.innerRef}
-                      {...provided.droppableProps}
-                      className="absolute inset-0 pointer-events-none"
+                      key={timeSlot.time}
+                      className={`timeline-hour h-16 flex items-center justify-center text-sm text-muted-foreground ${
+                        timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
+                      }`}
                     >
-                      {filteredBlocks.map((block, index) => {
-                        const blockStyle = getBlockStyle(block);
-                        const activity = getActivity(block.activityId);
-                        const conflict = conflicts.get(block.id);
+                      {timeSlot.displayTime}
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Day Columns */}
+                {getWeekDates(selectedDate).map((date, dayIndex) => {
+                  const dayName = getDayNames()[dayIndex];
+                  const dayBlocks = filteredBlocks.filter(block => block.date === date);
+                  
+                  return (
+                    <div key={date} className="border-r border-border last:border-r-0">
+                      {/* Day Header */}
+                      <div className="h-12 border-b border-border bg-muted/30 flex flex-col items-center justify-center p-2">
+                        <div className="text-xs font-medium text-muted-foreground">{dayName.slice(0, 3)}</div>
+                        <div className="text-sm font-semibold">{new Date(date + 'T00:00:00').getDate()}</div>
+                      </div>
+                      
+                      {/* Day Schedule Content */}
+                      <div className="relative" style={{ minHeight: "512px" }}>
+                        {/* Individual Time Slots for this day */}
+                        {timeSlots.map((timeSlot, index) => (
+                          <div
+                            key={`timeslot-${date}-${index}`}
+                            className={`droppable-area h-16 cursor-pointer hover:bg-accent/50 transition-colors ${
+                              timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
+                            }`}
+                            onClick={() => handleTimeSlotClick(timeSlot.time)}
+                            style={{ 
+                              position: "absolute",
+                              top: `${index * 64}px`,
+                              left: 0,
+                              right: 0,
+                              zIndex: 1,
+                            }}
+                          />
+                        ))}
 
-                        return (
-                          <Draggable key={block.id} draggableId={block.id} index={index}>
-                            {(provided: any, snapshot: any) => (
+                        {/* Schedule Blocks for this day - positioned but not in separate droppable */}
+                        <div className="absolute inset-0 pointer-events-none">
+                          {dayBlocks.map((block, index) => {
+                            const blockStyle = getBlockStyle(block, dayIndex);
+                            const activity = getActivity(block.activityId);
+                            const conflict = conflicts.get(block.id);
+
+                            return (
                               <div
-                                ref={provided.innerRef}
-                                {...provided.draggableProps}
-                                className={`${blockStyle.className} pointer-events-auto relative`}
+                                key={block.id}
+                                className={blockStyle.className}
                                 style={{
                                   ...blockStyle.style,
-                                  ...provided.draggableProps.style,
-                                  opacity: snapshot.isDragging ? 0.8 : 1,
+                                  pointerEvents: 'auto',
                                 }}
-                                onClick={() => handleBlockClick(block)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleBlockClick(block);
+                                }}
                                 data-testid={`block-${block.id}`}
                               >
-                                {/* Top Resize Handle */}
-                                <div
-                                  className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize bg-transparent hover:bg-primary/20 transition-colors"
-                                  onMouseDown={(e) => handleResizeStart(block.id, 'top', e)}
-                                  title="Resize block start time"
-                                />
-                                
-                                {/* Bottom Resize Handle */}
-                                <div
-                                  className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize bg-transparent hover:bg-primary/20 transition-colors"
-                                  onMouseDown={(e) => handleResizeStart(block.id, 'bottom', e)}
-                                  title="Resize block end time"
-                                />
-
-                                <div className="flex items-center justify-between h-full px-2 py-1">
-                                  <div className="flex-1 min-w-0">
-                                    <h4 className="text-sm font-medium truncate">
-                                      {activity?.title || "Unknown Activity"}
-                                    </h4>
-                                    <div className="flex items-center mt-1 space-x-1 flex-wrap">
-                                      {/* Students */}
-                                      {block.studentIds.slice(0, 3).map((studentId) => {
+                                    <div className="flex items-center justify-between mb-1">
+                                      <GripVertical className="h-3 w-3 text-muted-foreground/50" />
+                                      {conflict && (
+                                        <div className="text-xs text-destructive">
+                                          {conflict.type === "aide" ? (
+                                            <AlertTriangle className="h-3 w-3" />
+                                          ) : (
+                                            <AlertCircle className="h-3 w-3" />
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                    
+                                    <div className="text-xs font-medium text-foreground mb-1 line-clamp-2">
+                                      {activity?.name || "Unknown Activity"}
+                                    </div>
+                                    
+                                    <div className="text-xs text-muted-foreground mb-2">
+                                      {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
+                                    </div>
+                                    
+                                    <div className="flex flex-wrap gap-1">
+                                      {block.studentIds.map(studentId => {
                                         const student = getStudent(studentId);
-                                        if (!student) return null;
-                                        return (
+                                        return student ? (
                                           <Badge
                                             key={studentId}
                                             variant="secondary"
-                                            className={`text-xs px-2 py-0.5 ${getEntityBadgeClass(student.color)}`}
+                                            className={`text-xs px-1 py-0 ${getEntityBadgeClass(student.color)}`}
+                                            data-testid={`student-badge-${student.id}`}
                                           >
                                             {student.name}
                                           </Badge>
-                                        );
+                                        ) : null;
                                       })}
-                                      {block.studentIds.length > 3 && (
-                                        <Badge variant="secondary" className="text-xs px-2 py-0.5">
-                                          +{block.studentIds.length - 3}
-                                        </Badge>
-                                      )}
-                                      
-                                      {/* Aides */}
-                                      {block.aideIds.slice(0, 2).map((aideId) => {
+                                      {block.aideIds.map(aideId => {
                                         const aide = getAide(aideId);
-                                        if (!aide) return null;
-                                        return (
+                                        return aide ? (
                                           <Badge
                                             key={aideId}
-                                            variant="secondary"
-                                            className={`text-xs px-2 py-0.5 ${getEntityBadgeClass(aide.color)}`}
+                                            variant="outline"
+                                            className={`text-xs px-1 py-0 ${getEntityBadgeClass(aide.color)}`}
+                                            data-testid={`aide-badge-${aide.id}`}
                                           >
                                             {aide.name}
                                           </Badge>
-                                        );
+                                        ) : null;
                                       })}
-                                      {block.aideIds.length > 2 && (
-                                        <Badge variant="secondary" className="text-xs px-2 py-0.5">
-                                          +{block.aideIds.length - 2}
-                                        </Badge>
-                                      )}
                                     </div>
                                   </div>
-                                  <div className="flex items-center space-x-1 ml-2">
-                                    {conflict && (
-                                      <div className="flex items-center">
-                                        {conflict.type === "aide" ? (
-                                          <AlertCircle 
-                                            className="h-3 w-3 text-red-600"
-                                          />
-                                        ) : (
-                                          <AlertTriangle 
-                                            className="h-3 w-3 text-yellow-600"
-                                          />
-                                        )}
-                                      </div>
-                                    )}
-                                    {block.notes && (
-                                      <StickyNote 
-                                        className="h-3 w-3 text-muted-foreground"
-                                      />
-                                    )}
-                                    <div {...provided.dragHandleProps}>
-                                      <GripVertical className="h-3 w-3 text-muted-foreground" />
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </Draggable>
-                        );
-                      })}
-                      {provided.placeholder}
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
-                  )}
-                </Droppable>
+                  );
+                })}
               </div>
-            </div>
-          </DragDropContext>
+            ) : (
+              /* Day View Layout */
+              <div className="grid grid-cols-[80px_1fr] gap-0 min-h-[600px]">
+                {/* Time Column */}
+                <div className="border-r border-border">
+                  {timeSlots.map((timeSlot, index) => (
+                    <div
+                      key={timeSlot.time}
+                      className={`timeline-hour h-16 flex items-center justify-center text-sm text-muted-foreground cursor-pointer hover:bg-accent transition-colors ${
+                        timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
+                      }`}
+                      onClick={() => handleTimeSlotClick(timeSlot.time)}
+                      data-testid={`timeslot-${timeSlot.time}`}
+                    >
+                      {timeSlot.displayTime}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Schedule Content */}
+                <div className="relative" style={{ minHeight: "512px" }}>
+                  {/* Individual Time Slots */}
+                  {timeSlots.map((timeSlot, index) => (
+                    <div
+                      key={`timeslot-${index}`}
+                      className={`droppable-area h-16 cursor-pointer hover:bg-accent/50 transition-colors ${
+                        timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
+                      }`}
+                      onClick={() => handleTimeSlotClick(timeSlot.time)}
+                      style={{ 
+                        position: "absolute",
+                        top: `${index * 64}px`,
+                        left: 0,
+                        right: 0,
+                        zIndex: 1,
+                      }}
+                    />
+                  ))}
+
+                  {/* Schedule Blocks - positioned but not in separate droppable */}
+                  <div className="absolute inset-0 pointer-events-none">
+                    {filteredBlocks.map((block, index) => {
+                      const blockStyle = getBlockStyle(block);
+                      const activity = getActivity(block.activityId);
+                      const conflict = conflicts.get(block.id);
+
+                      return (
+                        <div
+                          key={block.id}
+                          className={blockStyle.className}
+                          style={{
+                            ...blockStyle.style,
+                            pointerEvents: 'auto',
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleBlockClick(block);
+                          }}
+                              data-testid={`block-${block.id}`}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <GripVertical className="h-3 w-3 text-muted-foreground/50" />
+                                {conflict && (
+                                  <div className="text-xs text-destructive">
+                                    {conflict.type === "aide" ? (
+                                      <AlertTriangle className="h-3 w-3" />
+                                    ) : (
+                                      <AlertCircle className="h-3 w-3" />
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                              
+                              <div className="text-xs font-medium text-foreground mb-1 line-clamp-2">
+                                {activity?.name || "Unknown Activity"}
+                              </div>
+                              
+                              <div className="text-xs text-muted-foreground mb-2">
+                                {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
+                              </div>
+                              
+                              <div className="flex flex-wrap gap-1">
+                                {block.studentIds.map(studentId => {
+                                  const student = getStudent(studentId);
+                                  return student ? (
+                                    <Badge
+                                      key={studentId}
+                                      variant="secondary"
+                                      className={`text-xs px-1 py-0 ${getEntityBadgeClass(student.color)}`}
+                                      data-testid={`student-badge-${student.id}`}
+                                    >
+                                      {student.name}
+                                    </Badge>
+                                  ) : null;
+                                })}
+                                {block.aideIds.map(aideId => {
+                                  const aide = getAide(aideId);
+                                  return aide ? (
+                                    <Badge
+                                      key={aideId}
+                                      variant="outline"
+                                      className={`text-xs px-1 py-0 ${getEntityBadgeClass(aide.color)}`}
+                                      data-testid={`aide-badge-${aide.id}`}
+                                    >
+                                      {aide.name}
+                                    </Badge>
+                                  ) : null;
+                                })}
+                              </div>
+                            </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </Card>
 

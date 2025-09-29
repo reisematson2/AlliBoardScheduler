@@ -35,6 +35,7 @@ export default function Schedule() {
   const [selectedDate, setSelectedDate] = useState(getCurrentDate());
   const [viewMode, setViewMode] = useState<"master" | "student" | "aide">("master");
   const [selectedEntityId, setSelectedEntityId] = useState<string>("");
+  const [calendarView, setCalendarView] = useState<"day" | "week">("day");
   const [templateName, setTemplateName] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const { toast } = useToast();
@@ -188,6 +189,20 @@ export default function Schedule() {
           </div>
           
           <div className="flex items-center space-x-4">
+            {/* Calendar View Toggle */}
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium text-muted-foreground">Calendar:</label>
+              <Select value={calendarView} onValueChange={(value: "day" | "week") => setCalendarView(value)}>
+                <SelectTrigger className="w-20" data-testid="select-calendar-view">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="day">Day</SelectItem>
+                  <SelectItem value="week">Week</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* View Toggle */}
             <div className="flex items-center space-x-2">
               <label className="text-sm font-medium text-muted-foreground">View:</label>
@@ -215,7 +230,7 @@ export default function Schedule() {
                       <SelectItem key={entity.id} value={entity.id}>
                         <div className="flex items-center space-x-2">
                           <div className={`w-3 h-3 rounded-full bg-${entity.color}-500`} />
-                          <span>{"name" in entity ? entity.name : "title" in entity ? entity.title : ""}</span>
+                          <span>{entity.name}</span>
                         </div>
                       </SelectItem>
                     ))}
@@ -291,6 +306,7 @@ export default function Schedule() {
               selectedDate={selectedDate}
               viewMode={viewMode}
               selectedEntityId={selectedEntityId}
+              calendarView={calendarView}
             />
 
             {/* Quick Stats */}
