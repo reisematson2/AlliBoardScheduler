@@ -69,7 +69,7 @@
         
         async function populateSampleData() {
             try {
-                showResult('🚀 Starting to populate sample data...');
+                showResult('🚀 Starting to populate comprehensive school week data...');
                 
                 const sampleData = {
                     students: [
@@ -77,18 +77,33 @@
                         { name: "Liam Smith", color: "green" },
                         { name: "Olivia Brown", color: "purple" },
                         { name: "Noah Davis", color: "orange" },
-                        { name: "Ava Wilson", color: "teal" }
+                        { name: "Ava Wilson", color: "teal" },
+                        { name: "William Miller", color: "indigo" }
                     ],
                     aides: [
                         { name: "Sarah Thompson", color: "green" },
                         { name: "Michael Chen", color: "purple" },
-                        { name: "Jennifer Lee", color: "orange" }
+                        { name: "Jennifer Lee", color: "orange" },
+                        { name: "David Kim", color: "teal" },
+                        { name: "Lisa Johnson", color: "indigo" },
+                        { name: "Robert Taylor", color: "pink" }
                     ],
                     activities: [
-                        { title: "Math Tutoring", color: "blue" },
-                        { title: "Reading Support", color: "green" },
-                        { title: "Speech Therapy", color: "purple" },
-                        { title: "Art Therapy", color: "pink" }
+                        { title: "Morning Circle", color: "blue" },
+                        { title: "Math Centers", color: "green" },
+                        { title: "Reading Groups", color: "purple" },
+                        { title: "Speech Therapy", color: "orange" },
+                        { title: "Occupational Therapy", color: "teal" },
+                        { title: "Physical Therapy", color: "indigo" },
+                        { title: "Art & Crafts", color: "pink" },
+                        { title: "Music & Movement", color: "yellow" },
+                        { title: "Social Skills", color: "red" },
+                        { title: "Lunch & Recess", color: "blue" },
+                        { title: "Quiet Time", color: "gray" },
+                        { title: "Science Discovery", color: "green" },
+                        { title: "Free Play", color: "purple" },
+                        { title: "Story Time", color: "orange" },
+                        { title: "Closing Circle", color: "teal" }
                     ]
                 };
                 
@@ -113,40 +128,614 @@
                     activities.push(created);
                 }
                 
-                // Create sample blocks
-                const today = new Date().toISOString().split('T')[0];
-                const blocks = [
-                    {
-                        date: today,
-                        startTime: "09:00",
-                        endTime: "10:00",
-                        activityId: activities[0].id,
-                        studentIds: [students[0].id, students[1].id],
-                        aideIds: [aides[0].id],
-                        notes: "Math tutoring session",
-                        recurrence: '{"type":"none"}'
-                    },
-                    {
-                        date: today,
-                        startTime: "10:30",
-                        endTime: "11:30",
-                        activityId: activities[1].id,
-                        studentIds: [students[2].id],
-                        aideIds: [aides[1].id],
-                        notes: "Reading support",
-                        recurrence: '{"type":"none"}'
+                // Create comprehensive week schedule (8am-3pm)
+                const today = new Date();
+                const currentWeekStart = new Date(today);
+                const dayOfWeek = today.getDay();
+                const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+                currentWeekStart.setDate(today.getDate() + daysToMonday);
+                
+                const weekDates = [];
+                for (let i = 0; i < 5; i++) {
+                    const date = new Date(currentWeekStart);
+                    date.setDate(currentWeekStart.getDate() + i);
+                    weekDates.push(date.toISOString().split('T')[0]);
+                }
+                
+                const blocks = [];
+                
+                // Create varied daily schedules for each day of the week
+                weekDates.forEach((date, dayIndex) => {
+                    let dayBlocks = [];
+                    
+                    // Common recurring events (every day)
+                    const recurringBlocks = [
+                        // 8:00-8:30 - Morning Circle (Recurring daily)
+                        {
+                            date: date,
+                            startTime: "08:00",
+                            endTime: "08:30",
+                            activityId: activities[0].id, // Morning Circle
+                            studentIds: students.map(s => s.id),
+                            aideIds: [aides[0].id, aides[1].id],
+                            notes: "Daily morning circle with calendar and weather",
+                            recurrence: '{"type":"daily","interval":1}'
+                        },
+                        
+                        // 11:45-12:30 - Lunch & Recess (Recurring daily)
+                        {
+                            date: date,
+                            startTime: "11:45",
+                            endTime: "12:30",
+                            activityId: activities[9].id, // Lunch & Recess
+                            studentIds: students.map(s => s.id),
+                            aideIds: aides.map(a => a.id),
+                            notes: "Lunch and outdoor play",
+                            recurrence: '{"type":"daily","interval":1}'
+                        },
+                        
+                        // 2:30-3:00 - Story Time & Closing Circle (Recurring daily)
+                        {
+                            date: date,
+                            startTime: "14:30",
+                            endTime: "15:00",
+                            activityId: activities[13].id, // Story Time
+                            studentIds: students.map(s => s.id),
+                            aideIds: [aides[0].id, aides[1].id],
+                            notes: "Daily story and closing circle",
+                            recurrence: '{"type":"daily","interval":1}'
+                        }
+                    ];
+                    
+                    // Day-specific schedules
+                    if (dayIndex === 0) { // Monday - Math Focus Day
+                        dayBlocks = [
+                            ...recurringBlocks,
+                            // 8:30-9:30 - Extended Math Centers
+                            {
+                                date: date,
+                                startTime: "08:30",
+                                endTime: "09:30",
+                                activityId: activities[1].id, // Math Centers
+                                studentIds: [students[0].id, students[1].id, students[2].id],
+                                aideIds: [aides[0].id, aides[2].id],
+                                notes: "Monday Math Focus - Number recognition and counting",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[1]}'
+                            },
+                            {
+                                date: date,
+                                startTime: "08:30",
+                                endTime: "09:30",
+                                activityId: activities[1].id, // Math Centers
+                                studentIds: [students[3].id, students[4].id, students[5].id],
+                                aideIds: [aides[1].id, aides[3].id],
+                                notes: "Monday Math Focus - Shape sorting and patterns",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[1]}'
+                            },
+                            
+                            // 9:30-10:15 - Reading Groups
+                            {
+                                date: date,
+                                startTime: "09:30",
+                                endTime: "10:15",
+                                activityId: activities[2].id, // Reading Groups
+                                studentIds: [students[0].id, students[3].id],
+                                aideIds: [aides[0].id],
+                                notes: "Monday reading - Letter sounds and phonics",
+                                recurrence: '{"type":"none"}'
+                            },
+                            {
+                                date: date,
+                                startTime: "09:30",
+                                endTime: "10:15",
+                                activityId: activities[2].id, // Reading Groups
+                                studentIds: [students[1].id, students[4].id],
+                                aideIds: [aides[1].id],
+                                notes: "Monday reading - Sight words practice",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 10:15-10:30 - Snack
+                            {
+                                date: date,
+                                startTime: "10:15",
+                                endTime: "10:30",
+                                activityId: activities[9].id, // Lunch & Recess
+                                studentIds: students.map(s => s.id),
+                                aideIds: aides.map(a => a.id),
+                                notes: "Morning snack time",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 10:30-11:15 - Individual Therapy
+                            {
+                                date: date,
+                                startTime: "10:30",
+                                endTime: "11:15",
+                                activityId: activities[3].id, // Speech Therapy
+                                studentIds: [students[0].id],
+                                aideIds: [aides[3].id],
+                                notes: "Monday speech therapy - Articulation practice",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[1]}'
+                            },
+                            {
+                                date: date,
+                                startTime: "10:30",
+                                endTime: "11:15",
+                                activityId: activities[4].id, // Occupational Therapy
+                                studentIds: [students[1].id],
+                                aideIds: [aides[4].id],
+                                notes: "Monday OT - Handwriting and fine motor",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[1]}'
+                            },
+                            
+                            // 11:15-12:00 - Art & Crafts
+                            {
+                                date: date,
+                                startTime: "11:15",
+                                endTime: "12:00",
+                                activityId: activities[6].id, // Art & Crafts
+                                studentIds: students.map(s => s.id),
+                                aideIds: [aides[0].id, aides[1].id, aides[2].id],
+                                notes: "Monday art - Math-themed crafts and counting",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 12:30-1:15 - Quiet Time
+                            {
+                                date: date,
+                                startTime: "12:30",
+                                endTime: "13:15",
+                                activityId: activities[10].id, // Quiet Time
+                                studentIds: students.map(s => s.id),
+                                aideIds: [aides[0].id, aides[1].id],
+                                notes: "Extended quiet time after math focus",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 1:15-2:00 - Free Play
+                            {
+                                date: date,
+                                startTime: "13:15",
+                                endTime: "14:00",
+                                activityId: activities[12].id, // Free Play
+                                studentIds: students.map(s => s.id),
+                                aideIds: aides.map(a => a.id),
+                                notes: "Structured free play with math manipulatives",
+                                recurrence: '{"type":"none"}'
+                            }
+                        ];
+                    } else if (dayIndex === 1) { // Tuesday - Reading Focus Day
+                        dayBlocks = [
+                            ...recurringBlocks,
+                            // 8:30-9:15 - Reading Groups
+                            {
+                                date: date,
+                                startTime: "08:30",
+                                endTime: "09:15",
+                                activityId: activities[2].id, // Reading Groups
+                                studentIds: [students[0].id, students[3].id],
+                                aideIds: [aides[0].id],
+                                notes: "Tuesday reading - Story comprehension",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[2]}'
+                            },
+                            {
+                                date: date,
+                                startTime: "08:30",
+                                endTime: "09:15",
+                                activityId: activities[2].id, // Reading Groups
+                                studentIds: [students[1].id, students[4].id],
+                                aideIds: [aides[1].id],
+                                notes: "Tuesday reading - Vocabulary building",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[2]}'
+                            },
+                            
+                            // 9:15-10:00 - Math Centers
+                            {
+                                date: date,
+                                startTime: "09:15",
+                                endTime: "10:00",
+                                activityId: activities[1].id, // Math Centers
+                                studentIds: [students[0].id, students[1].id, students[2].id],
+                                aideIds: [aides[0].id, aides[2].id],
+                                notes: "Tuesday math - Addition and subtraction basics",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 10:00-10:15 - Snack
+                            {
+                                date: date,
+                                startTime: "10:00",
+                                endTime: "10:15",
+                                activityId: activities[9].id, // Lunch & Recess
+                                studentIds: students.map(s => s.id),
+                                aideIds: aides.map(a => a.id),
+                                notes: "Morning snack time",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 10:15-11:00 - Physical Therapy
+                            {
+                                date: date,
+                                startTime: "10:15",
+                                endTime: "11:00",
+                                activityId: activities[5].id, // Physical Therapy
+                                studentIds: [students[2].id],
+                                aideIds: [aides[5].id],
+                                notes: "Tuesday PT - Balance and coordination",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[2]}'
+                            },
+                            
+                            // 11:00-11:45 - Music & Movement
+                            {
+                                date: date,
+                                startTime: "11:00",
+                                endTime: "11:45",
+                                activityId: activities[7].id, // Music & Movement
+                                studentIds: students.map(s => s.id),
+                                aideIds: [aides[2].id, aides[3].id, aides[4].id],
+                                notes: "Tuesday music - Reading-themed songs and movement",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[2]}'
+                            },
+                            
+                            // 12:30-1:15 - Science Discovery
+                            {
+                                date: date,
+                                startTime: "12:30",
+                                endTime: "13:15",
+                                activityId: activities[11].id, // Science Discovery
+                                studentIds: students.map(s => s.id),
+                                aideIds: [aides[2].id, aides[3].id, aides[4].id],
+                                notes: "Tuesday science - Weather and seasons exploration",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 1:15-2:00 - Social Skills
+                            {
+                                date: date,
+                                startTime: "13:15",
+                                endTime: "14:00",
+                                activityId: activities[8].id, // Social Skills
+                                studentIds: students.map(s => s.id),
+                                aideIds: [aides[0].id, aides[1].id],
+                                notes: "Tuesday social skills - Sharing and taking turns",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[2]}'
+                            }
+                        ];
+                    } else if (dayIndex === 2) { // Wednesday - Science & Discovery Day
+                        dayBlocks = [
+                            ...recurringBlocks,
+                            // 8:30-9:30 - Extended Science Discovery
+                            {
+                                date: date,
+                                startTime: "08:30",
+                                endTime: "09:30",
+                                activityId: activities[11].id, // Science Discovery
+                                studentIds: students.map(s => s.id),
+                                aideIds: [aides[2].id, aides[3].id, aides[4].id],
+                                notes: "Wednesday science - Hands-on experiments and observations",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[3]}'
+                            },
+                            
+                            // 9:30-10:15 - Math Centers
+                            {
+                                date: date,
+                                startTime: "09:30",
+                                endTime: "10:15",
+                                activityId: activities[1].id, // Math Centers
+                                studentIds: [students[3].id, students[4].id, students[5].id],
+                                aideIds: [aides[1].id, aides[3].id],
+                                notes: "Wednesday math - Measurement and comparison",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 10:15-10:30 - Snack
+                            {
+                                date: date,
+                                startTime: "10:15",
+                                endTime: "10:30",
+                                activityId: activities[9].id, // Lunch & Recess
+                                studentIds: students.map(s => s.id),
+                                aideIds: aides.map(a => a.id),
+                                notes: "Morning snack time",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 10:30-11:15 - Individual Therapy
+                            {
+                                date: date,
+                                startTime: "10:30",
+                                endTime: "11:15",
+                                activityId: activities[3].id, // Speech Therapy
+                                studentIds: [students[2].id],
+                                aideIds: [aides[3].id],
+                                notes: "Wednesday speech therapy - Language development",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[3]}'
+                            },
+                            {
+                                date: date,
+                                startTime: "10:30",
+                                endTime: "11:15",
+                                activityId: activities[4].id, // Occupational Therapy
+                                studentIds: [students[3].id],
+                                aideIds: [aides[4].id],
+                                notes: "Wednesday OT - Sensory activities and self-care",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[3]}'
+                            },
+                            
+                            // 11:15-12:00 - Art & Crafts
+                            {
+                                date: date,
+                                startTime: "11:15",
+                                endTime: "12:00",
+                                activityId: activities[6].id, // Art & Crafts
+                                studentIds: students.map(s => s.id),
+                                aideIds: [aides[0].id, aides[1].id, aides[2].id],
+                                notes: "Wednesday art - Science-themed crafts and experiments",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 12:30-1:15 - Reading Groups
+                            {
+                                date: date,
+                                startTime: "12:30",
+                                endTime: "13:15",
+                                activityId: activities[2].id, // Reading Groups
+                                studentIds: [students[2].id, students[5].id],
+                                aideIds: [aides[2].id],
+                                notes: "Wednesday reading - Non-fiction and informational texts",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 1:15-2:00 - Free Play
+                            {
+                                date: date,
+                                startTime: "13:15",
+                                endTime: "14:00",
+                                activityId: activities[12].id, // Free Play
+                                studentIds: students.map(s => s.id),
+                                aideIds: aides.map(a => a.id),
+                                notes: "Structured free play with science materials",
+                                recurrence: '{"type":"none"}'
+                            }
+                        ];
+                    } else if (dayIndex === 3) { // Thursday - Art & Creativity Day
+                        dayBlocks = [
+                            ...recurringBlocks,
+                            // 8:30-9:30 - Extended Art & Crafts
+                            {
+                                date: date,
+                                startTime: "08:30",
+                                endTime: "09:30",
+                                activityId: activities[6].id, // Art & Crafts
+                                studentIds: students.map(s => s.id),
+                                aideIds: [aides[0].id, aides[1].id, aides[2].id],
+                                notes: "Thursday art - Creative expression and fine motor development",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[4]}'
+                            },
+                            
+                            // 9:30-10:15 - Reading Groups
+                            {
+                                date: date,
+                                startTime: "09:30",
+                                endTime: "10:15",
+                                activityId: activities[2].id, // Reading Groups
+                                studentIds: [students[0].id, students[3].id],
+                                aideIds: [aides[0].id],
+                                notes: "Thursday reading - Creative writing and storytelling",
+                                recurrence: '{"type":"none"}'
+                            },
+                            {
+                                date: date,
+                                startTime: "09:30",
+                                endTime: "10:15",
+                                activityId: activities[2].id, // Reading Groups
+                                studentIds: [students[1].id, students[4].id],
+                                aideIds: [aides[1].id],
+                                notes: "Thursday reading - Poetry and rhymes",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 10:15-10:30 - Snack
+                            {
+                                date: date,
+                                startTime: "10:15",
+                                endTime: "10:30",
+                                activityId: activities[9].id, // Lunch & Recess
+                                studentIds: students.map(s => s.id),
+                                aideIds: aides.map(a => a.id),
+                                notes: "Morning snack time",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 10:30-11:15 - Individual Therapy
+                            {
+                                date: date,
+                                startTime: "10:30",
+                                endTime: "11:15",
+                                activityId: activities[3].id, // Speech Therapy
+                                studentIds: [students[4].id],
+                                aideIds: [aides[3].id],
+                                notes: "Thursday speech therapy - Communication and expression",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[4]}'
+                            },
+                            {
+                                date: date,
+                                startTime: "10:30",
+                                endTime: "11:15",
+                                activityId: activities[5].id, // Physical Therapy
+                                studentIds: [students[5].id],
+                                aideIds: [aides[5].id],
+                                notes: "Thursday PT - Gross motor skills and movement",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[4]}'
+                            },
+                            
+                            // 11:15-12:00 - Music & Movement
+                            {
+                                date: date,
+                                startTime: "11:15",
+                                endTime: "12:00",
+                                activityId: activities[7].id, // Music & Movement
+                                studentIds: students.map(s => s.id),
+                                aideIds: [aides[2].id, aides[3].id, aides[4].id],
+                                notes: "Thursday music - Creative movement and dance",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 12:30-1:15 - Math Centers
+                            {
+                                date: date,
+                                startTime: "12:30",
+                                endTime: "13:15",
+                                activityId: activities[1].id, // Math Centers
+                                studentIds: [students[0].id, students[1].id, students[2].id],
+                                aideIds: [aides[0].id, aides[2].id],
+                                notes: "Thursday math - Geometry and spatial awareness",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 1:15-2:00 - Social Skills
+                            {
+                                date: date,
+                                startTime: "13:15",
+                                endTime: "14:00",
+                                activityId: activities[8].id, // Social Skills
+                                studentIds: students.map(s => s.id),
+                                aideIds: [aides[0].id, aides[1].id],
+                                notes: "Thursday social skills - Collaboration and teamwork",
+                                recurrence: '{"type":"none"}'
+                            }
+                        ];
+                    } else { // Friday - Fun & Review Day
+                        dayBlocks = [
+                            ...recurringBlocks,
+                            // 8:30-9:15 - Review Activities
+                            {
+                                date: date,
+                                startTime: "08:30",
+                                endTime: "09:15",
+                                activityId: activities[1].id, // Math Centers
+                                studentIds: [students[0].id, students[1].id, students[2].id],
+                                aideIds: [aides[0].id, aides[2].id],
+                                notes: "Friday review - Math games and activities",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[5]}'
+                            },
+                            {
+                                date: date,
+                                startTime: "08:30",
+                                endTime: "09:15",
+                                activityId: activities[2].id, // Reading Groups
+                                studentIds: [students[3].id, students[4].id, students[5].id],
+                                aideIds: [aides[1].id, aides[3].id],
+                                notes: "Friday review - Reading games and activities",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[5]}'
+                            },
+                            
+                            // 9:15-10:00 - Music & Movement
+                            {
+                                date: date,
+                                startTime: "09:15",
+                                endTime: "10:00",
+                                activityId: activities[7].id, // Music & Movement
+                                studentIds: students.map(s => s.id),
+                                aideIds: [aides[2].id, aides[3].id, aides[4].id],
+                                notes: "Friday music - Celebration songs and movement",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[5]}'
+                            },
+                            
+                            // 10:00-10:15 - Snack
+                            {
+                                date: date,
+                                startTime: "10:00",
+                                endTime: "10:15",
+                                activityId: activities[9].id, // Lunch & Recess
+                                studentIds: students.map(s => s.id),
+                                aideIds: aides.map(a => a.id),
+                                notes: "Morning snack time",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 10:15-11:00 - Individual Therapy
+                            {
+                                date: date,
+                                startTime: "10:15",
+                                endTime: "11:00",
+                                activityId: activities[3].id, // Speech Therapy
+                                studentIds: [students[5].id],
+                                aideIds: [aides[3].id],
+                                notes: "Friday speech therapy - Social communication",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[5]}'
+                            },
+                            {
+                                date: date,
+                                startTime: "10:15",
+                                endTime: "11:00",
+                                activityId: activities[4].id, // Occupational Therapy
+                                studentIds: [students[0].id],
+                                aideIds: [aides[4].id],
+                                notes: "Friday OT - Life skills and independence",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[5]}'
+                            },
+                            
+                            // 11:00-11:45 - Art & Crafts
+                            {
+                                date: date,
+                                startTime: "11:00",
+                                endTime: "11:45",
+                                activityId: activities[6].id, // Art & Crafts
+                                studentIds: students.map(s => s.id),
+                                aideIds: [aides[0].id, aides[1].id, aides[2].id],
+                                notes: "Friday art - Free choice creative activities",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 12:30-1:15 - Science Discovery
+                            {
+                                date: date,
+                                startTime: "12:30",
+                                endTime: "13:15",
+                                activityId: activities[11].id, // Science Discovery
+                                studentIds: students.map(s => s.id),
+                                aideIds: [aides[2].id, aides[3].id, aides[4].id],
+                                notes: "Friday science - Fun experiments and exploration",
+                                recurrence: '{"type":"none"}'
+                            },
+                            
+                            // 1:15-2:00 - Social Skills
+                            {
+                                date: date,
+                                startTime: "13:15",
+                                endTime: "14:00",
+                                activityId: activities[8].id, // Social Skills
+                                studentIds: students.map(s => s.id),
+                                aideIds: [aides[0].id, aides[1].id],
+                                notes: "Friday social skills - Friendship and community building",
+                                recurrence: '{"type":"weekly","interval":1,"daysOfWeek":[5]}'
+                            }
+                        ];
                     }
-                ];
+                    
+                    blocks.push(...dayBlocks);
+                });
                 
                 for (const block of blocks) {
                     await apiRequest('POST', '/blocks', block);
                 }
                 
-                showResult(`🎉 Sample data created successfully!<br>
+                showResult(`🎉 Varied school week data created successfully!<br>
                     • ${students.length} students<br>
                     • ${aides.length} aides<br>
                     • ${activities.length} activities<br>
-                    • ${blocks.length} schedule blocks<br><br>
+                    • ${blocks.length} schedule blocks (varied daily schedules)<br><br>
+                    📅 <strong>Daily Themes:</strong><br>
+                    • <strong>Monday:</strong> Math Focus Day<br>
+                    • <strong>Tuesday:</strong> Reading Focus Day<br>
+                    • <strong>Wednesday:</strong> Science & Discovery Day<br>
+                    • <strong>Thursday:</strong> Art & Creativity Day<br>
+                    • <strong>Friday:</strong> Fun & Review Day<br><br>
+                    🔄 <strong>Recurring Events:</strong><br>
+                    • Morning Circle, Lunch & Recess, Story Time (Daily)<br>
+                    • Weekly therapy sessions and themed activities<br><br>
                     🌐 <a href="http://localhost:5000" target="_blank">Open AlliBoard Application</a>`);
                     
             } catch (error) {

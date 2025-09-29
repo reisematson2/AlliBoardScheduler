@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Calendar,
   Download,
@@ -12,6 +15,10 @@ import {
   AlertTriangle,
   AlertCircle,
   StickyNote,
+  Filter,
+  Users,
+  UserCheck,
+  FileText,
 } from "lucide-react";
 import { Block, Student, Aide, Activity } from "@shared/schema";
 import { getCurrentDate, formatTimeDisplay, formatDateDisplay, generateTimeSlots } from "@/lib/time-utils";
@@ -20,6 +27,13 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function PrintView() {
   const [selectedDate, setSelectedDate] = useState(getCurrentDate());
+  const [printMode, setPrintMode] = useState<'master' | 'individual'>('master');
+  const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
+  const [selectedAides, setSelectedAides] = useState<string[]>([]);
+  const [showStudents, setShowStudents] = useState(true);
+  const [showAides, setShowAides] = useState(true);
+  const [showConflicts, setShowConflicts] = useState(true);
+  const [showNotes, setShowNotes] = useState(true);
   const { toast } = useToast();
 
   const { data: blocks = [], isLoading: blocksLoading } = useQuery<Block[]>({
@@ -77,12 +91,76 @@ export default function PrintView() {
     return colorMap[color] || "bg-gray-100 text-gray-800";
   };
 
-  const getBlocksByTimeSlot = (timeSlot: string) => {
+  // Filter blocks based on selected students/aides and display options
+  const getFilteredBlocks = () => {
     return blocks.filter(block => {
+      // If we have any selections (students or aides), apply filtering
+      if (selectedStudents.length > 0 || selectedAides.length > 0) {
+        // Check if block involves any selected students or aides
+        const hasSelectedStudents = selectedStudents.length > 0 && 
+          block.studentIds.some(id => selectedStudents.includes(id));
+        const hasSelectedAides = selectedAides.length > 0 && 
+          block.aideIds.some(id => selectedAides.includes(id));
+        
+        return hasSelectedStudents || hasSelectedAides;
+      }
+      
+      // If no selections made, show all blocks (master mode behavior)
+      return true;
+    });
+  };
+
+  const getBlocksByTimeSlot = (timeSlot: string) => {
+    const filteredBlocks = getFilteredBlocks();
+    return filteredBlocks.filter(block => {
       const blockStartHour = parseInt(block.startTime.split(':')[0]);
       const slotHour = parseInt(timeSlot.split(':')[0]);
       return blockStartHour === slotHour;
     });
+  };
+
+  // Get blocks for a specific student
+  const getStudentBlocks = (studentId: string) => {
+    return blocks.filter(block => block.studentIds.includes(studentId));
+  };
+
+  // Get blocks for a specific aide
+  const getAideBlocks = (aideId: string) => {
+    return blocks.filter(block => block.aideIds.includes(aideId));
+  };
+
+  // Handle student selection
+  const handleStudentToggle = (studentId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedStudents(prev => [...prev, studentId]);
+    } else {
+      setSelectedStudents(prev => prev.filter(id => id !== studentId));
+    }
+  };
+
+  // Handle aide selection
+  const handleAideToggle = (aideId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedAides(prev => [...prev, aideId]);
+    } else {
+      setSelectedAides(prev => prev.filter(id => id !== aideId));
+    }
+  };
+
+  // Select all students
+  const selectAllStudents = () => {
+    setSelectedStudents(students.map(s => s.id));
+  };
+
+  // Select all aides
+  const selectAllAides = () => {
+    setSelectedAides(aides.map(a => a.id));
+  };
+
+  // Clear all selections
+  const clearAllSelections = () => {
+    setSelectedStudents([]);
+    setSelectedAides([]);
   };
 
   const handlePrint = () => {
@@ -97,6 +175,46 @@ export default function PrintView() {
       description: "Use your browser's print function and select 'Save as PDF' as the destination." 
     });
     window.print();
+  };
+
+  // Bulk print all student schedules
+  const handleBulkPrintStudents = () => {
+    if (students.length === 0) {
+      toast({ title: "No Students", description: "No students available to print." });
+      return;
+    }
+    
+    setPrintMode('individual');
+    setSelectedStudents(students.map(s => s.id));
+    setSelectedAides([]);
+    
+    toast({ 
+      title: "Printing Student Schedules", 
+      description: `Preparing to print ${students.length} student schedules. Use your browser's print function.` 
+    });
+    
+    // Small delay to ensure state updates
+    setTimeout(() => window.print(), 100);
+  };
+
+  // Bulk print all aide schedules
+  const handleBulkPrintAides = () => {
+    if (aides.length === 0) {
+      toast({ title: "No Aides", description: "No aides available to print." });
+      return;
+    }
+    
+    setPrintMode('individual');
+    setSelectedAides(aides.map(a => a.id));
+    setSelectedStudents([]);
+    
+    toast({ 
+      title: "Printing Aide Schedules", 
+      description: `Preparing to print ${aides.length} aide schedules. Use your browser's print function.` 
+    });
+    
+    // Small delay to ensure state updates
+    setTimeout(() => window.print(), 100);
   };
 
   if (blocksLoading) {
@@ -165,6 +283,19 @@ export default function PrintView() {
               />
             </div>
             
+            {/* Print Mode Selector */}
+            <div className="flex items-center space-x-2">
+              <Select value={printMode} onValueChange={(value: 'master' | 'individual') => setPrintMode(value)}>
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="master">Master</SelectItem>
+                  <SelectItem value="individual">Individual</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
             {/* Print Controls */}
             <div className="flex items-center space-x-2">
               <Button
@@ -183,6 +314,28 @@ export default function PrintView() {
                 Download PDF
               </Button>
             </div>
+
+            {/* Bulk Print Controls */}
+            <div className="flex items-center space-x-2 border-l border-border pl-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleBulkPrintStudents}
+                disabled={students.length === 0}
+              >
+                <Users className="mr-2 h-4 w-4" />
+                All Students
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleBulkPrintAides}
+                disabled={aides.length === 0}
+              >
+                <UserCheck className="mr-2 h-4 w-4" />
+                All Aides
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -192,23 +345,199 @@ export default function PrintView() {
           {/* Print Header */}
           <div className="text-center border-b border-border pb-4">
             <h1 className="text-3xl font-bold text-foreground print:text-black">
-              Daily Schedule
+              {(selectedStudents.length > 0 || selectedAides.length > 0) ? 'Individual Schedules' : 'Master Schedule'}
             </h1>
             <p className="text-lg text-muted-foreground print:text-gray-600 mt-2">
               {formatDateDisplay(selectedDate)}
             </p>
+            
+            {/* Selection Status - Hidden in print */}
+            {(selectedStudents.length > 0 || selectedAides.length > 0) && (
+              <div className="print:hidden mt-3 flex justify-center space-x-4 text-sm">
+                {selectedStudents.length > 0 && (
+                  <div className="flex items-center space-x-1">
+                    <Users className="h-4 w-4 text-blue-600" />
+                    <span className="text-blue-600 font-medium">
+                      {selectedStudents.length} Student{selectedStudents.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                )}
+                {selectedAides.length > 0 && (
+                  <div className="flex items-center space-x-1">
+                    <UserCheck className="h-4 w-4 text-green-600" />
+                    <span className="text-green-600 font-medium">
+                      {selectedAides.length} Aide{selectedAides.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                )}
+                {selectedStudents.length === 0 && selectedAides.length === 0 && (
+                  <div className="flex items-center space-x-1">
+                    <Filter className="h-4 w-4 text-gray-500" />
+                    <span className="text-gray-500">No selections</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Filter Controls - Hidden in print */}
+          <div className="print:hidden">
+            <Tabs defaultValue="filters" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="filters">Filters & Options</TabsTrigger>
+                <TabsTrigger value="individual">Individual Selection</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="filters" className="space-y-4">
+                <Card className="p-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="show-students"
+                        checked={showStudents}
+                        onCheckedChange={(checked) => setShowStudents(checked as boolean)}
+                      />
+                      <label htmlFor="show-students" className="text-sm font-medium">
+                        Show Students
+                      </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="show-aides"
+                        checked={showAides}
+                        onCheckedChange={(checked) => setShowAides(checked as boolean)}
+                      />
+                      <label htmlFor="show-aides" className="text-sm font-medium">
+                        Show Aides
+                      </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="show-conflicts"
+                        checked={showConflicts}
+                        onCheckedChange={(checked) => setShowConflicts(checked as boolean)}
+                      />
+                      <label htmlFor="show-conflicts" className="text-sm font-medium">
+                        Show Conflicts
+                      </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="show-notes"
+                        checked={showNotes}
+                        onCheckedChange={(checked) => setShowNotes(checked as boolean)}
+                      />
+                      <label htmlFor="show-notes" className="text-sm font-medium">
+                        Show Notes
+                      </label>
+                    </div>
+                  </div>
+                </Card>
+              </TabsContent>
+              
+              <TabsContent value="individual" className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Student Selection */}
+                  <Card className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-lg font-semibold flex items-center">
+                        <Users className="mr-2 h-5 w-5" />
+                        Students
+                      </h3>
+                      <div className="flex space-x-2">
+                        <Button size="sm" variant="outline" onClick={selectAllStudents}>
+                          Select All
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={clearAllSelections}>
+                          Clear
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {students.map((student) => (
+                        <div key={student.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`student-${student.id}`}
+                            checked={selectedStudents.includes(student.id)}
+                            onCheckedChange={(checked) => handleStudentToggle(student.id, checked as boolean)}
+                          />
+                          <label htmlFor={`student-${student.id}`} className="text-sm flex items-center">
+                            <div className={`w-3 h-3 rounded-full mr-2 ${getEntityBadgeClass(student.color).split(' ')[0]}`} />
+                            {student.name}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+
+                  {/* Aide Selection */}
+                  <Card className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-lg font-semibold flex items-center">
+                        <UserCheck className="mr-2 h-5 w-5" />
+                        Aides
+                      </h3>
+                      <div className="flex space-x-2">
+                        <Button size="sm" variant="outline" onClick={selectAllAides}>
+                          Select All
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={clearAllSelections}>
+                          Clear
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {aides.map((aide) => (
+                        <div key={aide.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`aide-${aide.id}`}
+                            checked={selectedAides.includes(aide.id)}
+                            onCheckedChange={(checked) => handleAideToggle(aide.id, checked as boolean)}
+                          />
+                          <label htmlFor={`aide-${aide.id}`} className="text-sm flex items-center">
+                            <div className={`w-3 h-3 rounded-full mr-2 ${getEntityBadgeClass(aide.color).split(' ')[0]}`} />
+                            {aide.name}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                </div>
+              </TabsContent>
+            </Tabs>
           </div>
 
           {/* Schedule Content */}
           <Card className="print:shadow-none print:border-0">
             <div className="p-6 print:p-4">
-              {blocks.length === 0 ? (
-                <div className="text-center py-12">
-                  <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-foreground">No Sessions Scheduled</h3>
-                  <p className="text-muted-foreground">There are no sessions scheduled for this date.</p>
-                </div>
-              ) : (
+              {(() => {
+                const filteredBlocks = getFilteredBlocks();
+                
+                if (blocks.length === 0) {
+                  return (
+                    <div className="text-center py-12">
+                      <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-foreground">No Sessions Scheduled</h3>
+                      <p className="text-muted-foreground">There are no sessions scheduled for this date.</p>
+                    </div>
+                  );
+                }
+                
+                if ((selectedStudents.length > 0 || selectedAides.length > 0) && filteredBlocks.length === 0) {
+                  return (
+                    <div className="text-center py-12">
+                      <Filter className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-foreground">No Sessions Match Selection</h3>
+                      <p className="text-muted-foreground">
+                        {selectedStudents.length === 0 && selectedAides.length === 0
+                          ? "Please select students or aides to view their schedules."
+                          : "No sessions found for the selected students and aides."}
+                      </p>
+                    </div>
+                  );
+                }
+                
+                return (
                 <div className="space-y-4">
                   {timeSlots.map((timeSlot) => {
                     const timeBlocks = getBlocksByTimeSlot(timeSlot);
@@ -252,7 +581,7 @@ export default function PrintView() {
                                         </div>
                                         
                                         <div className="flex items-center space-x-2">
-                                          {conflict && (
+                                          {conflict && showConflicts && (
                                             <div className="flex items-center space-x-1">
                                               {conflict.type === "aide" ? (
                                                 <AlertCircle className="h-4 w-4 text-red-600" />
@@ -264,7 +593,7 @@ export default function PrintView() {
                                               </span>
                                             </div>
                                           )}
-                                          {block.notes && (
+                                          {block.notes && showNotes && (
                                             <div className="flex items-center space-x-1">
                                               <StickyNote className="h-4 w-4 text-muted-foreground" />
                                               <span className="text-xs text-muted-foreground print:text-gray-600">
@@ -277,7 +606,7 @@ export default function PrintView() {
 
                                       {/* Students and Aides */}
                                       <div className="space-y-2">
-                                        {block.studentIds.length > 0 && (
+                                        {block.studentIds.length > 0 && showStudents && (
                                           <div>
                                             <p className="text-sm font-medium text-foreground print:text-black mb-1">
                                               Students:
@@ -300,7 +629,7 @@ export default function PrintView() {
                                           </div>
                                         )}
 
-                                        {block.aideIds.length > 0 && (
+                                        {block.aideIds.length > 0 && showAides && (
                                           <div>
                                             <p className="text-sm font-medium text-foreground print:text-black mb-1">
                                               Aides:
@@ -323,7 +652,7 @@ export default function PrintView() {
                                           </div>
                                         )}
 
-                                        {block.notes && (
+                                        {block.notes && showNotes && (
                                           <div>
                                             <p className="text-sm font-medium text-foreground print:text-black mb-1">
                                               Notes:
@@ -345,7 +674,8 @@ export default function PrintView() {
                     );
                   })}
                 </div>
-              )}
+                );
+              })()}
             </div>
           </Card>
 
@@ -354,12 +684,12 @@ export default function PrintView() {
             <div className="grid grid-cols-3 gap-8 text-center">
               <div>
                 <p className="font-semibold">Total Sessions</p>
-                <p className="text-2xl font-bold">{blocks.length}</p>
+                <p className="text-2xl font-bold">{getFilteredBlocks().length}</p>
               </div>
               <div>
                 <p className="font-semibold">Active Students</p>
                 <p className="text-2xl font-bold">
-                  {new Set(blocks.flatMap(block => block.studentIds)).size}
+                  {new Set(getFilteredBlocks().flatMap(block => block.studentIds)).size}
                 </p>
               </div>
               <div>
