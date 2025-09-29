@@ -49,8 +49,15 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  constructor() {
+    if (!db) {
+      throw new Error("Database not initialized. DATABASE_URL is required for DatabaseStorage.");
+    }
+  }
+
   // Students
   async getStudents(): Promise<Student[]> {
+    if (!db) throw new Error("Database not initialized");
     return await db.select().from(students);
   }
 
@@ -221,11 +228,11 @@ let storage: IStorage;
 // Initialize storage
 function initializeStorage(): IStorage {
   try {
-    if (process.env.DATABASE_URL && process.env.DATABASE_URL !== "postgresql://user:password@localhost:5432/alliboard") {
+    if (process.env.DATABASE_URL && process.env.DATABASE_URL !== "postgresql://user:password@localhost:5432/alliboard" && db) {
       console.log("Using database storage with DATABASE_URL");
       return new DatabaseStorage();
     } else {
-      console.log("No valid DATABASE_URL found, using in-memory storage for development");
+      console.log("Using in-memory storage for development");
       return new MemoryStorage();
     }
   } catch (error) {

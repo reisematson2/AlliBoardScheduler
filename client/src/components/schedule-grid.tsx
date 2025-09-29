@@ -314,7 +314,7 @@ const getImprovedBlockPosition = (startTime: string, endTime: string, heightPerH
   
   // Calculate position from start hour (8 AM = 0px)
   const startOffsetMinutes = startMinutes - (startHour * 60);
-  const top = Math.max(0, startOffsetMinutes * pixelsPerMinute);
+  const top = Math.max(0, startOffsetMinutes * pixelsPerMinute) - 3; // Move up 3px to align with grid lines
   const height = Math.max(32, duration * pixelsPerMinute);
   
   return {
@@ -545,6 +545,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
 
     if (calendarView === "week" && columnIndex !== undefined) {
       // In week view, blocks are positioned relative to their column
+      // No header offset needed - already positioned within day container
       return {
         className,
         style: {
@@ -793,13 +794,18 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
               <div className="grid grid-cols-[80px_repeat(7,1fr)] gap-0 h-full">
                 {/* Time Column */}
                 <div className="border-r border-border relative">
+                  {/* Time column header to match day headers */}
+                  <div className="h-12 border-b border-border bg-muted/30 flex items-center justify-center">
+                    <div className="text-xs font-medium text-muted-foreground">Time</div>
+                  </div>
+                  
                   {timeSlots.map((timeSlot, index) => {
                     // Calculate position based on actual time, not index
                     const timeMinutes = timeToMinutes(timeSlot.time);
                     const startHour = 8; // 8 AM start
                     const startOffsetMinutes = timeMinutes - (startHour * 60);
                     const pixelsPerMinute = heightPerHour / 60;
-                    const topPosition = Math.max(0, startOffsetMinutes * pixelsPerMinute);
+                    const topPosition = Math.max(0, startOffsetMinutes * pixelsPerMinute) + 48; // Add 48px for header height
                     
                     return (
                       <div
@@ -843,7 +849,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                           const startHour = 8; // 8 AM start
                           const startOffsetMinutes = timeMinutes - (startHour * 60);
                           const pixelsPerMinute = heightPerHour / 60;
-                          const topPosition = Math.max(0, startOffsetMinutes * pixelsPerMinute);
+                          const topPosition = Math.max(0, startOffsetMinutes * pixelsPerMinute); // No header offset needed - already in day container
                           
                           return (
                             <Droppable key={`timeslot-${date}-${index}`} droppableId={`timeslot-${date}-${index}`}>
@@ -851,7 +857,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                                 <div
                                   ref={provided.innerRef}
                                   {...provided.droppableProps}
-                                  className={`droppable-area h-16 cursor-pointer hover:bg-accent/50 transition-colors ${
+                                  className={`droppable-area cursor-pointer hover:bg-accent/50 transition-colors ${
                                     timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
                                   } ${
                                     snapshot.isDraggingOver ? "bg-primary/10 border-primary" : ""
@@ -860,6 +866,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                                   style={{ 
                                     position: "absolute",
                                     top: `${topPosition}px`,
+                                    height: `${heightPerHour / 2}px`, // Match time label height
                                     left: 0,
                                     right: 0,
                                     zIndex: snapshot.isDraggingOver ? 5 : 1,
@@ -956,7 +963,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                           <div
                             ref={provided.innerRef}
                             {...provided.droppableProps}
-                            className={`droppable-area h-16 cursor-pointer hover:bg-accent/50 transition-colors ${
+                            className={`droppable-area cursor-pointer hover:bg-accent/50 transition-colors ${
                               timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
                             } ${
                               snapshot.isDraggingOver ? "bg-primary/10 border-primary" : ""
@@ -965,6 +972,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                             style={{ 
                               position: "absolute",
                               top: `${topPosition}px`,
+                              height: `${heightPerHour / 2}px`, // Match time label height
                               left: 0,
                               right: 0,
                               zIndex: snapshot.isDraggingOver ? 5 : 1,
