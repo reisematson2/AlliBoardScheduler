@@ -160,8 +160,8 @@ function DroppableBlock({
                 </div>
               </div>
               
-              {/* Right side: Names */}
-              <div className="flex flex-col gap-0.5 ml-2 max-h-full overflow-hidden">
+              {/* Right side: Names and overflow indicator */}
+              <div className="relative flex-1 ml-1 max-h-full overflow-hidden">
                 {(() => {
                   // Calculate how many names we can fit based on block duration
                   const durationMinutes = timeToMinutes(block.endTime) - timeToMinutes(block.startTime);
@@ -190,7 +190,12 @@ function DroppableBlock({
                     const avgTextLength = totalTextLength / namesToShow;
                     
                     // If names are short, we might be able to fit more
-                    if (avgTextLength < 8 && namesToShow < allNames.length) {
+                    if (avgTextLength < 10 && namesToShow < allNames.length) {
+                      namesToShow = Math.min(namesToShow + 1, allNames.length);
+                    }
+                    
+                    // For very short names, try to fit even more
+                    if (avgTextLength < 6 && namesToShow < allNames.length) {
                       namesToShow = Math.min(namesToShow + 1, allNames.length);
                     }
                   }
@@ -200,19 +205,24 @@ function DroppableBlock({
                   
                   return (
                     <>
-                      {visibleNames.map(({ id, type, entity }) => (
-                        <div
-                          key={id}
-                          className={`text-xs px-1 py-0.5 rounded ${
-                            type === 'aide' ? 'border ' : ''
-                          }${getEntityBadgeClass(entity.color)} truncate leading-tight`}
-                          data-testid={`${type}-badge-${entity.id}`}
-                        >
-                          {entity.name}
-                        </div>
-                      ))}
+                      {/* Names list */}
+                      <div className="flex flex-col gap-0.5 pr-6">
+                        {visibleNames.map(({ id, type, entity }) => (
+                          <div
+                            key={id}
+                            className={`text-xs px-1 py-0.5 rounded ${
+                              type === 'aide' ? 'border ' : ''
+                            }${getEntityBadgeClass(entity.color)} truncate leading-tight`}
+                            data-testid={`${type}-badge-${entity.id}`}
+                          >
+                            {entity.name}
+                          </div>
+                        ))}
+                      </div>
+                      
+                      {/* Overflow indicator in bottom right corner */}
                       {remainingCount > 0 && (
-                        <div className="text-xs px-1 py-0.5 rounded border text-muted-foreground bg-muted/50 leading-tight">
+                        <div className="absolute bottom-1 right-1 text-xs px-1 py-0.5 rounded text-muted-foreground bg-muted/50 leading-tight">
                           +{remainingCount}
                         </div>
                       )}
@@ -539,7 +549,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     return groups;
   };
 
-  const getBlockStyle = (block: Block, columnIndex?: number, blockIndex?: number) => {
+  const getBlockStyle = (block: Block, columnIndex?: number, blockIndex?: number, allBlocksForDate?: Block[]) => {
     const position = getImprovedBlockPosition(block.startTime, block.endTime, heightPerHour, 8);
     const activity = getActivity(block.activityId);
     const conflict = conflicts.get(block.id);
@@ -570,7 +580,9 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     }
 
     // Calculate overlapping blocks for side-by-side layout
-    const overlappingBlocks = filteredBlocks.filter(otherBlock => {
+    // Use the provided blocks for the date, or fall back to filteredBlocks
+    const blocksToCheck = allBlocksForDate || filteredBlocks;
+    const overlappingBlocks = blocksToCheck.filter(otherBlock => {
       if (otherBlock.id === block.id) return false;
       if (otherBlock.date !== block.date) return false;
       
@@ -949,7 +961,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                         <div className="absolute inset-0 pointer-events-none">
                           {groupOverlappingBlocks(dayBlocks).map((group, groupIndex) => 
                             group.map((block, blockIndex) => {
-                              const blockStyle = getBlockStyle(block, dayIndex, blockIndex);
+                              const blockStyle = getBlockStyle(block, dayIndex, blockIndex, dayBlocks);
                               const activity = getActivity(block.activityId);
                               const conflict = conflicts.get(block.id);
 
@@ -1055,7 +1067,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                   <div className="absolute inset-0 pointer-events-none">
                     {groupOverlappingBlocks(filteredBlocks).map((group, groupIndex) => 
                       group.map((block, blockIndex) => {
-                        const blockStyle = getBlockStyle(block, undefined, blockIndex);
+                        const blockStyle = getBlockStyle(block, undefined, blockIndex, filteredBlocks);
                         const activity = getActivity(block.activityId);
                         const conflict = conflicts.get(block.id);
 
