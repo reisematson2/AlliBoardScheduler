@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { DndContext, DragEndEvent, rectIntersection } from "@dnd-kit/core";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -21,7 +22,7 @@ import {
 import { Sidebar } from "@/components/sidebar";
 import { ScheduleGrid } from "@/components/schedule-grid";
 import { Student, Aide, Activity, Block } from "@shared/schema";
-import { getCurrentDate, formatDateDisplay } from "@/lib/time-utils";
+import { getCurrentDate, formatDateDisplay, timeToMinutes } from "@/lib/time-utils";
 import { detectConflicts } from "@/lib/conflicts";
 import {
   saveTemplateToLocalStorage,
@@ -30,6 +31,7 @@ import {
   deleteTemplateFromLocalStorage,
 } from "@/lib/templates";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Schedule() {
   const [selectedDate, setSelectedDate] = useState(getCurrentDate());
@@ -75,6 +77,83 @@ export default function Schedule() {
 
   const availableAides = aides.length;
   const templateNames = getTemplateNames();
+
+  // Drag and drop mutations
+  const updateBlockMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Block }) => 
+      apiRequest("PUT", `/api/blocks/${id}`, data),
+    onSuccess: () => {
+      // Invalidate blocks query to refresh data
+      window.location.reload();
+    },
+    onError: () => {
+      toast({ title: "Failed to update block", variant: "destructive" });
+    },
+  });
+
+  const handleEntityDrop = (activeId: string, destinationId: string) => {
+    // Extract entity type and ID from activeId
+    const isStudent = activeId.startsWith('student-');
+    const entityId = activeId.replace(/^(student-|aide-)/, '');
+    
+    // Find the target block
+    const blockId = destinationId.replace('block-', '');
+    const targetBlock = blocks.find(block => block.id === blockId);
+    
+    if (!targetBlock) {
+      console.log('Target block not found for ID:', blockId);
+      return;
+    }
+
+    // Update the block with the new entity
+    const updatedBlock = { ...targetBlock };
+    
+    if (isStudent) {
+      // Add student if not already present
+      if (!updatedBlock.studentIds.includes(entityId)) {
+        updatedBlock.studentIds = [...updatedBlock.studentIds, entityId];
+      }
+    } else {
+      // Add aide if not already present
+      if (!updatedBlock.aideIds.includes(entityId)) {
+        updatedBlock.aideIds = [...updatedBlock.aideIds, entityId];
+      }
+    }
+
+    // Update the block
+    updateBlockMutation.mutate({
+      id: blockId,
+      data: updatedBlock,
+    });
+
+    const activity = activities.find(a => a.id === targetBlock.activityId);
+    toast({ 
+      title: `${isStudent ? 'Student' : 'Aide'} added to block`,
+      description: `Added to ${activity?.title || 'activity'}`
+    });
+  };
+
+  const onDragEnd = (event: DragEndEvent) => {
+    console.log('onDragEnd called with event:', event);
+    
+    if (!event.over) {
+      console.log('No destination, exiting');
+      return;
+    }
+
+    const activeId = event.active.id as string;
+    const destinationId = event.over.id as string;
+
+    // Check if we're dragging a student or aide from the sidebar
+    if (activeId.startsWith('student-') || activeId.startsWith('aide-')) {
+      handleEntityDrop(activeId, destinationId);
+      return;
+    }
+
+    // For block dragging, we'll let the ScheduleGrid handle it
+    // by passing the event down
+    console.log('Block drag detected, passing to ScheduleGrid');
+  };
 
   const handleViewModeChange = (mode: string) => {
     setViewMode(mode as "master" | "student" | "aide");
@@ -294,23 +373,28 @@ export default function Schedule() {
         </div>
       </header>
 
-      <div className="flex h-screen">
-        <Sidebar onEntityUpdate={() => {
-          // Force refresh to update schedule when entities change
-          window.location.reload();
-        }} />
+      <DndContext 
+        onDragEnd={onDragEnd}
+        collisionDetection={rectIntersection}
+      >
+        <div className="flex h-screen">
+          <Sidebar onEntityUpdate={() => {
+            // Force refresh to update schedule when entities change
+            window.location.reload();
+          }} />
 
-        <main className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 flex flex-col overflow-hidden p-6">
-            <ScheduleGrid
-              selectedDate={selectedDate}
-              viewMode={viewMode}
-              selectedEntityId={selectedEntityId}
-              calendarView={calendarView}
-            />
-          </div>
-        </main>
-      </div>
+          <main className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 flex flex-col overflow-hidden p-6">
+              <ScheduleGrid
+                selectedDate={selectedDate}
+                viewMode={viewMode}
+                selectedEntityId={selectedEntityId}
+                calendarView={calendarView}
+              />
+            </div>
+          </main>
+        </div>
+      </DndContext>
     </div>
   );
 }

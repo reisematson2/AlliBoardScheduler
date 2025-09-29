@@ -123,3 +123,14 @@
   background-color: hsl(221, 83%, 53%, 0.1);
   border: 2px dashed hsl(221, 83%, 53%);
 }
+
+/* Ensure sidebar stays visible during drag operations */
+aside {
+  z-index: 10;
+  position: relative;
+}
+
+/* Drag overlay should not interfere with sidebar */
+[data-dnd-kit-drag-overlay] {
+  z-index: 9999;
+}

@@ -1,13 +1,8 @@
 import React, { useState, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { 
-  DndContext, 
-  DragEndEvent, 
   useDraggable, 
-  useDroppable,
-  closestCenter,
-  pointerWithin,
-  rectIntersection
+  useDroppable
 } from "@dnd-kit/core";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -509,121 +504,6 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     handleAddBlock(time);
   };
 
-  const handleEntityDrop = (activeId: string, destinationId: string) => {
-    // Extract entity type and ID from activeId
-    const isStudent = activeId.startsWith('student-');
-    const entityId = activeId.replace(/^(student-|aide-)/, '');
-    
-    // Find the target block
-    const blockId = destinationId.replace('block-', '');
-    const targetBlock = allBlocks.find(block => block.id === blockId);
-    
-    if (!targetBlock) {
-      console.log('Target block not found for ID:', blockId);
-      return;
-    }
-
-    // Update the block with the new entity
-    const updatedBlock = { ...targetBlock };
-    
-    if (isStudent) {
-      // Add student if not already present
-      if (!updatedBlock.studentIds.includes(entityId)) {
-        updatedBlock.studentIds = [...updatedBlock.studentIds, entityId];
-      }
-    } else {
-      // Add aide if not already present
-      if (!updatedBlock.aideIds.includes(entityId)) {
-        updatedBlock.aideIds = [...updatedBlock.aideIds, entityId];
-      }
-    }
-
-    // Update the block
-    updateBlockMutation.mutate({
-      id: blockId,
-      data: updatedBlock,
-    });
-
-    toast({ 
-      title: `${isStudent ? 'Student' : 'Aide'} added to block`,
-      description: `Added to ${getActivity(targetBlock.activityId)?.title || 'activity'}`
-    });
-  };
-
-  const onDragEnd = (event: DragEndEvent) => {
-    console.log('onDragEnd called with event:', event);
-    
-    if (!event.over) {
-      console.log('No destination, exiting');
-      return;
-    }
-
-    const activeId = event.active.id as string;
-    const destinationId = event.over.id as string;
-
-    // Check if we're dragging a student or aide from the sidebar
-    if (activeId.startsWith('student-') || activeId.startsWith('aide-')) {
-      handleEntityDrop(activeId, destinationId);
-      return;
-    }
-
-    // Otherwise, handle block dragging
-    const block = allBlocks.find((b: Block) => b.id === activeId);
-    if (!block) {
-      console.log('Block not found for ID:', activeId);
-      return;
-    }
-    
-    console.log('Processing drag for block:', block);
-
-    // Parse the destination to get the target time and date
-    let newStartTime: string;
-    let newDate: string = block.date; // Default to existing date
-
-    if (destinationId.startsWith("timeslot-")) {
-      if (calendarView === "week") {
-        // Week view format: "timeslot-${date}-${index}"
-        const match = destinationId.match(/^timeslot-(.+)-(\d+)$/);
-        if (match) {
-          newDate = match[1];
-          const timeSlotIndex = parseInt(match[2]);
-          if (timeSlotIndex >= 0 && timeSlotIndex < timeSlots.length) {
-            newStartTime = timeSlots[timeSlotIndex].time;
-          } else {
-            return; // Invalid time slot index
-          }
-        } else {
-          return; // Invalid format
-        }
-      } else {
-        // Day view format: "timeslot-${index}"
-        const timeSlotIndex = parseInt(destinationId.replace("timeslot-", ""));
-        if (timeSlotIndex >= 0 && timeSlotIndex < timeSlots.length) {
-          newStartTime = timeSlots[timeSlotIndex].time;
-        } else {
-          return; // Invalid time slot index
-        }
-      }
-    } else {
-      return; // Not a valid drop target
-    }
-
-    // Calculate the duration of the block
-    const originalDuration = timeToMinutes(block.endTime) - timeToMinutes(block.startTime);
-    const newEndTime = timeToMinutes(newStartTime) + originalDuration;
-    const newEndTimeStr = `${Math.floor(newEndTime / 60).toString().padStart(2, "0")}:${(newEndTime % 60).toString().padStart(2, "0")}`;
-
-    // Update the block with new time and date
-    updateBlockMutation.mutate({
-      id: blockId,
-      data: {
-        ...block,
-        startTime: newStartTime,
-        endTime: newEndTimeStr,
-        date: newDate, // Update date for week view drops
-      },
-    });
-  };
 
   const handleResizeStart = (blockId: string, type: 'top' | 'bottom', e: React.MouseEvent) => {
     e.preventDefault();
@@ -774,10 +654,6 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
         </div>
 
         <div ref={containerRef} className="flex-1 overflow-auto p-4">
-          <DndContext 
-            onDragEnd={onDragEnd}
-            collisionDetection={rectIntersection}
-          >
             {calendarView === "week" ? (
               /* Week View Layout */
               <div className="grid grid-cols-[80px_repeat(7,1fr)] gap-0 h-full">
@@ -947,34 +823,34 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                                             </div>
                                             
                                             {/* Right side: Names */}
-                                            <div className="flex flex-col gap-1 overflow-hidden ml-2">
-                                              {block.studentIds.slice(0, 4).map(studentId => {
+                                            <div className="flex flex-col gap-0.5 ml-2 max-h-full overflow-hidden">
+                                              {block.studentIds.slice(0, 2).map(studentId => {
                                                 const student = getStudent(studentId);
                                                 return student ? (
                                                   <div
                                                     key={studentId}
-                                                    className={`text-xs px-1 py-0.5 rounded ${getEntityBadgeClass(student.color)} truncate`}
+                                                    className={`text-xs px-1 py-0.5 rounded ${getEntityBadgeClass(student.color)} truncate leading-tight`}
                                                     data-testid={`student-badge-${student.id}`}
                                                   >
                                                     {student.name}
                                                   </div>
                                                 ) : null;
                                               })}
-                                              {block.aideIds.slice(0, 2).map(aideId => {
+                                              {block.aideIds.slice(0, 1).map(aideId => {
                                                 const aide = getAide(aideId);
                                                 return aide ? (
                                                   <div
                                                     key={aideId}
-                                                    className={`text-xs px-1 py-0.5 rounded border ${getEntityBadgeClass(aide.color)} truncate`}
+                                                    className={`text-xs px-1 py-0.5 rounded border ${getEntityBadgeClass(aide.color)} truncate leading-tight`}
                                                     data-testid={`aide-badge-${aide.id}`}
                                                   >
                                                     {aide.name}
                                                   </div>
                                                 ) : null;
                                               })}
-                                              {(block.studentIds.length > 4 || block.aideIds.length > 2) && (
-                                                <div className="text-xs px-1 py-0.5 rounded border text-muted-foreground">
-                                                  +{Math.max(0, block.studentIds.length - 4) + Math.max(0, block.aideIds.length - 2)}
+                                              {(block.studentIds.length > 2 || block.aideIds.length > 1) && (
+                                                <div className="text-xs px-1 py-0.5 rounded border text-muted-foreground bg-muted/50 leading-tight">
+                                                  +{Math.max(0, block.studentIds.length - 2) + Math.max(0, block.aideIds.length - 1)}
                                                 </div>
                                               )}
                                             </div>
@@ -1156,34 +1032,34 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                                       </div>
                                       
                                       {/* Right side: Names */}
-                                      <div className="flex flex-col gap-1 overflow-hidden ml-2">
-                                        {block.studentIds.slice(0, 4).map(studentId => {
+                                      <div className="flex flex-col gap-0.5 ml-2 max-h-full overflow-hidden">
+                                        {block.studentIds.slice(0, 2).map(studentId => {
                                           const student = getStudent(studentId);
                                           return student ? (
                                             <div
                                               key={studentId}
-                                              className={`text-xs px-1 py-0.5 rounded ${getEntityBadgeClass(student.color)} truncate`}
+                                              className={`text-xs px-1 py-0.5 rounded ${getEntityBadgeClass(student.color)} truncate leading-tight`}
                                               data-testid={`student-badge-${student.id}`}
                                             >
                                               {student.name}
                                             </div>
                                           ) : null;
                                         })}
-                                        {block.aideIds.slice(0, 2).map(aideId => {
+                                        {block.aideIds.slice(0, 1).map(aideId => {
                                           const aide = getAide(aideId);
                                           return aide ? (
                                             <div
                                               key={aideId}
-                                              className={`text-xs px-1 py-0.5 rounded border ${getEntityBadgeClass(aide.color)} truncate`}
+                                              className={`text-xs px-1 py-0.5 rounded border ${getEntityBadgeClass(aide.color)} truncate leading-tight`}
                                               data-testid={`aide-badge-${aide.id}`}
                                             >
                                               {aide.name}
                                             </div>
                                           ) : null;
                                         })}
-                                        {(block.studentIds.length > 4 || block.aideIds.length > 2) && (
-                                          <div className="text-xs px-1 py-0.5 rounded border text-muted-foreground">
-                                            +{Math.max(0, block.studentIds.length - 4) + Math.max(0, block.aideIds.length - 2)}
+                                        {(block.studentIds.length > 2 || block.aideIds.length > 1) && (
+                                          <div className="text-xs px-1 py-0.5 rounded border text-muted-foreground bg-muted/50 leading-tight">
+                                            +{Math.max(0, block.studentIds.length - 2) + Math.max(0, block.aideIds.length - 1)}
                                           </div>
                                         )}
                                       </div>
@@ -1205,7 +1081,6 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                 </div>
               </div>
             )}
-          </DndContext>
         </div>
       </Card>
 
