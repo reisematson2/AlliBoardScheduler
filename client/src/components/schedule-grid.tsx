@@ -162,35 +162,63 @@ function DroppableBlock({
               
               {/* Right side: Names */}
               <div className="flex flex-col gap-0.5 ml-2 max-h-full overflow-hidden">
-                {block.studentIds.slice(0, 2).map(studentId => {
-                  const student = getStudent(studentId);
-                  return student ? (
-                    <div
-                      key={studentId}
-                      className={`text-xs px-1 py-0.5 rounded ${getEntityBadgeClass(student.color)} truncate leading-tight`}
-                      data-testid={`student-badge-${student.id}`}
-                    >
-                      {student.name}
-                    </div>
-                  ) : null;
-                })}
-                {block.aideIds.slice(0, 1).map(aideId => {
-                  const aide = getAide(aideId);
-                  return aide ? (
-                    <div
-                      key={aideId}
-                      className={`text-xs px-1 py-0.5 rounded border ${getEntityBadgeClass(aide.color)} truncate leading-tight`}
-                      data-testid={`aide-badge-${aide.id}`}
-                    >
-                      {aide.name}
-                    </div>
-                  ) : null;
-                })}
-                {(block.studentIds.length > 2 || block.aideIds.length > 1) && (
-                  <div className="text-xs px-1 py-0.5 rounded border text-muted-foreground bg-muted/50 leading-tight">
-                    +{Math.max(0, block.studentIds.length - 2) + Math.max(0, block.aideIds.length - 1)}
-                  </div>
-                )}
+                {(() => {
+                  // Calculate how many names we can fit based on block duration
+                  const durationMinutes = timeToMinutes(block.endTime) - timeToMinutes(block.startTime);
+                  
+                  // Estimate how many names can fit based on block duration
+                  // Longer blocks can fit more names
+                  let maxNames = 2; // Default minimum
+                  if (durationMinutes >= 60) maxNames = 4; // 1+ hour blocks
+                  else if (durationMinutes >= 45) maxNames = 3; // 45+ minute blocks
+                  else if (durationMinutes >= 30) maxNames = 2; // 30+ minute blocks
+                  
+                  // Get all names (students first, then aides)
+                  const allNames = [
+                    ...block.studentIds.map(id => ({ id, type: 'student', entity: getStudent(id) })),
+                    ...block.aideIds.map(id => ({ id, type: 'aide', entity: getAide(id) }))
+                  ].filter(item => item.entity);
+                  
+                  // Calculate how many names we can actually display
+                  let namesToShow = Math.min(maxNames, allNames.length);
+                  
+                  // If we have space, try to fit more names by checking actual text length
+                  if (namesToShow < allNames.length) {
+                    const totalTextLength = allNames.slice(0, namesToShow).reduce((sum, item) => 
+                      sum + (item.entity?.name?.length || 0), 0
+                    );
+                    const avgTextLength = totalTextLength / namesToShow;
+                    
+                    // If names are short, we might be able to fit more
+                    if (avgTextLength < 8 && namesToShow < allNames.length) {
+                      namesToShow = Math.min(namesToShow + 1, allNames.length);
+                    }
+                  }
+                  
+                  const visibleNames = allNames.slice(0, namesToShow);
+                  const remainingCount = allNames.length - namesToShow;
+                  
+                  return (
+                    <>
+                      {visibleNames.map(({ id, type, entity }) => (
+                        <div
+                          key={id}
+                          className={`text-xs px-1 py-0.5 rounded ${
+                            type === 'aide' ? 'border ' : ''
+                          }${getEntityBadgeClass(entity.color)} truncate leading-tight`}
+                          data-testid={`${type}-badge-${entity.id}`}
+                        >
+                          {entity.name}
+                        </div>
+                      ))}
+                      {remainingCount > 0 && (
+                        <div className="text-xs px-1 py-0.5 rounded border text-muted-foreground bg-muted/50 leading-tight">
+                          +{remainingCount}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -216,7 +244,8 @@ import {
   formatTimeDisplay, 
   getBlockPosition, 
   generateTimeSlots,
-  timeToMinutes 
+  timeToMinutes,
+  getCurrentDate
 } from "@/lib/time-utils";
 import { detectConflicts } from "@/lib/conflicts";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -225,13 +254,16 @@ import { useToast } from "@/hooks/use-toast";
 
 // Helper functions for week view
 const getWeekDates = (selectedDate: string): string[] => {
-  const date = new Date(selectedDate);
+  const date = new Date(selectedDate + 'T00:00:00'); // Ensure we're working with local time
   const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  
+  // Find the Monday of the week containing the selected date
   const startOfWeek = new Date(date);
-  startOfWeek.setDate(date.getDate() - dayOfWeek);
+  const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Sunday = 0, so go back 6 days to get Monday
+  startOfWeek.setDate(date.getDate() + daysToMonday);
   
   const weekDates = [];
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 5; i++) { // Only 5 days: Monday to Friday
     const currentDate = new Date(startOfWeek);
     currentDate.setDate(startOfWeek.getDate() + i);
     weekDates.push(currentDate.toISOString().split('T')[0]);
@@ -240,7 +272,7 @@ const getWeekDates = (selectedDate: string): string[] => {
 };
 
 const getDayNames = (): string[] => {
-  return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 };
 
 // Improved time grid generation with half-hour intervals
@@ -343,7 +375,12 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
 
   // Calculate dates to fetch based on calendar view
   const datesToFetch = useMemo(() => {
-    return calendarView === "week" ? getWeekDates(selectedDate) : [selectedDate];
+    if (calendarView === "week") {
+      return getWeekDates(selectedDate);
+    } else {
+      // For daily view, use selected date
+      return [selectedDate];
+    }
   }, [calendarView, selectedDate]);
 
   // Fetch blocks for all relevant dates
@@ -351,6 +388,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     queryKey: ["/api/blocks", calendarView, selectedDate],
     queryFn: async () => {
       if (calendarView === "day") {
+        // For daily view, use selected date
         const res = await fetch(`/api/blocks?date=${selectedDate}`, {
           credentials: "include",
         });
@@ -401,7 +439,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
 
   // Use improved time slots with half-hour intervals
   const timeSlots = generateImprovedTimeSlots(8, 18);
-  const heightPerHour = useDynamicHeight(containerRef, 8, 18, forceRecalculate);
+  const heightPerHour = useDynamicHeight(containerRef, 8, 18, forceRecalculate > 0);
   const conflicts = detectConflicts(allBlocks, students, aides);
 
   // Force recalculation when data loads or changes
@@ -429,20 +467,35 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
       optimisticBlocks.get(block.id) || block
     );
     
-    if (viewMode === "master") return mergedBlocks;
+    // For daily view, only show blocks for the selected date
+    const dateFilteredBlocks = calendarView === "day" 
+      ? mergedBlocks.filter(block => block.date === selectedDate)
+      : mergedBlocks;
+    
+    if (viewMode === "master") return dateFilteredBlocks;
     
     if (viewMode === "student" && selectedEntityId) {
-      return mergedBlocks.filter(block => block.studentIds.includes(selectedEntityId));
+      return dateFilteredBlocks.filter(block => block.studentIds.includes(selectedEntityId));
     }
     
     if (viewMode === "aide" && selectedEntityId) {
-      return mergedBlocks.filter(block => block.aideIds.includes(selectedEntityId));
+      return dateFilteredBlocks.filter(block => block.aideIds.includes(selectedEntityId));
     }
     
-    return mergedBlocks;
-  }, [allBlocks, viewMode, selectedEntityId, optimisticBlocks]);
+    return dateFilteredBlocks;
+  }, [allBlocks, viewMode, selectedEntityId, optimisticBlocks, calendarView]);
 
   const getActivity = (activityId: string) => {
+    // Handle custom activities (stored as "custom:Activity Name")
+    if (activityId.startsWith('custom:')) {
+      const customName = activityId.replace('custom:', '');
+      return {
+        id: activityId,
+        title: customName,
+        color: 'gray', // Default color for custom activities
+        description: ''
+      };
+    }
     return activities.find(a => a.id === activityId);
   };
 
@@ -762,7 +815,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                   (() => {
                     const weekDates = getWeekDates(selectedDate);
                     const startDate = new Date(weekDates[0] + 'T00:00:00');
-                    const endDate = new Date(weekDates[6] + 'T00:00:00');
+                    const endDate = new Date(weekDates[4] + 'T00:00:00');
                     return `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
                   })()
                 ) : (
@@ -791,7 +844,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
         <div ref={containerRef} className="flex-1 overflow-auto p-4">
             {calendarView === "week" ? (
               /* Week View Layout */
-              <div className="grid grid-cols-[80px_repeat(7,1fr)] gap-0 h-full">
+              <div className="grid grid-cols-[80px_repeat(5,1fr)] gap-0 h-full">
                 {/* Time Column */}
                 <div className="border-r border-border relative">
                   {/* Time column header to match day headers */}
@@ -831,13 +884,26 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                 {getWeekDates(selectedDate).map((date, dayIndex) => {
                   const dayName = getDayNames()[dayIndex];
                   const dayBlocks = filteredBlocks.filter(block => block.date === date);
+                  const isCurrentDay = date === getCurrentDate();
                   
                   return (
                     <div key={date} className="border-r border-border last:border-r-0">
                       {/* Day Header */}
-                      <div className="h-12 border-b border-border bg-muted/30 flex flex-col items-center justify-center p-2">
-                        <div className="text-xs font-medium text-muted-foreground">{dayName.slice(0, 3)}</div>
-                        <div className="text-sm font-semibold">{new Date(date + 'T00:00:00').getDate()}</div>
+                      <div className={`h-12 border-b border-border flex flex-col items-center justify-center p-2 ${
+                        isCurrentDay 
+                          ? 'bg-primary/10 border-primary/20' 
+                          : 'bg-muted/30'
+                      }`}>
+                        <div className={`text-xs font-medium ${
+                          isCurrentDay ? 'text-primary' : 'text-muted-foreground'
+                        }`}>
+                          {dayName.slice(0, 3)}
+                        </div>
+                        <div className={`text-sm font-semibold ${
+                          isCurrentDay ? 'text-primary' : 'text-foreground'
+                        }`}>
+                          {new Date(date + 'T00:00:00').getDate()}
+                        </div>
                       </div>
                       
                       {/* Day Schedule Content */}

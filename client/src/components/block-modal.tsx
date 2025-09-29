@@ -31,8 +31,31 @@ import { Block, Student, Aide, Activity, insertBlockSchema } from "@shared/schem
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay } from "@/lib/time-utils";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon, ChevronUp, ChevronDown } from "lucide-react";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 import { RecurrencePatternEditor } from "@/components/recurrence-pattern-editor";
 import { parseRecurrencePattern, serializeRecurrencePattern, generateRecurrenceDates } from "@shared/recurrence-utils";
+
+// Helper functions for time manipulation
+const timeToMinutes = (time: string): number => {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+};
+
+const minutesToTime = (minutes: number): string => {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+};
+
+const adjustTime = (time: string, increment: number): string => {
+  const minutes = timeToMinutes(time);
+  const newMinutes = Math.max(0, Math.min(24 * 60 - 1, minutes + increment));
+  return minutesToTime(newMinutes);
+};
 
 interface BlockModalProps {
   open: boolean;
@@ -54,6 +77,7 @@ export function BlockModal({
   const { toast } = useToast();
   const isEditing = !!block;
   const [showRecurrenceEditor, setShowRecurrenceEditor] = useState(false);
+  const [useCustomActivity, setUseCustomActivity] = useState(false);
 
   const { data: activities = [] } = useQuery<Activity[]>({
     queryKey: ["/api/activities"],
@@ -73,39 +97,50 @@ export function BlockModal({
       startTime: initialStartTime || "09:00",
       endTime: initialEndTime || "10:00",
       activityId: "",
+      customActivityName: "",
       studentIds: [] as string[],
       aideIds: [] as string[],
       notes: "",
       recurrence: '{"type":"none"}',
       date: currentDate,
+      selectedDate: new Date(currentDate),
     },
   });
 
   useEffect(() => {
     if (block) {
+      const isCustomActivity = block.activityId.startsWith('custom:');
+      
       form.reset({
         startTime: block.startTime,
         endTime: block.endTime,
-        activityId: block.activityId,
+        activityId: isCustomActivity ? "" : block.activityId,
+        customActivityName: isCustomActivity ? block.activityId.replace('custom:', '') : "",
         studentIds: block.studentIds,
         aideIds: block.aideIds,
         notes: block.notes || "",
         recurrence: block.recurrence || '{"type":"none"}',
         date: block.date,
+        selectedDate: new Date(block.date),
       });
+      
+      setUseCustomActivity(isCustomActivity);
     } else {
       form.reset({
         startTime: initialStartTime || "09:00",
         endTime: initialEndTime || "10:00",
         activityId: "",
+        customActivityName: "",
         studentIds: [],
         aideIds: [],
         notes: "",
         recurrence: '{"type":"none"}',
         date: currentDate,
+        selectedDate: new Date(currentDate),
       });
+      setUseCustomActivity(false);
     }
-  }, [block, form, currentDate, initialStartTime, initialEndTime]);
+  }, [block, form, currentDate, initialStartTime, initialEndTime, activities]);
 
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/blocks", data),
@@ -158,6 +193,32 @@ export function BlockModal({
   });
 
   const onSubmit = (data: any) => {
+    // Handle custom activity name
+    if (useCustomActivity && data.customActivityName) {
+      // For custom activities, we'll store the name in the activityId field
+      // and create a temporary activity object for display purposes
+      data.activityId = `custom:${data.customActivityName}`;
+      delete data.customActivityName;
+    } else if (!useCustomActivity && !data.activityId) {
+      // If using prebuilt activities but none selected, show error
+      toast({ title: "Please select an activity or enter a custom name", variant: "destructive" });
+      return;
+    }
+    
+    // Validate that end time is after start time
+    const startMinutes = timeToMinutes(data.startTime);
+    const endMinutes = timeToMinutes(data.endTime);
+    if (endMinutes <= startMinutes) {
+      toast({ title: "End time must be after start time", variant: "destructive" });
+      return;
+    }
+    
+    // Update the date field with the selected date
+    if (data.selectedDate) {
+      data.date = data.selectedDate.toISOString().split('T')[0];
+      delete data.selectedDate;
+    }
+    
     if (isEditing) {
       updateMutation.mutate(data);
     } else {
@@ -231,29 +292,120 @@ export function BlockModal({
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             {/* Activity Selection */}
+            <div className="space-y-4">
+              <FormLabel>Activity</FormLabel>
+              
+              {/* Toggle between custom and prebuilt */}
+              <div className="flex space-x-2">
+                <Button
+                  type="button"
+                  variant={!useCustomActivity ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setUseCustomActivity(false);
+                    form.setValue("customActivityName", "");
+                  }}
+                >
+                  Quick Select
+                </Button>
+                <Button
+                  type="button"
+                  variant={useCustomActivity ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setUseCustomActivity(true);
+                    form.setValue("activityId", "");
+                  }}
+                >
+                  Custom Name
+                </Button>
+              </div>
+
+              {!useCustomActivity ? (
+                <FormField
+                  control={form.control}
+                  name="activityId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-activity">
+                            <SelectValue placeholder="Select a prebuilt activity" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {activities.map((activity) => (
+                            <SelectItem key={activity.id} value={activity.id}>
+                              <div className="flex items-center space-x-2">
+                                <div className={`w-3 h-3 rounded-full ${getColorDot(activity.color)}`} />
+                                <span>{activity.title}</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : (
+                <FormField
+                  control={form.control}
+                  name="customActivityName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <Input
+                          placeholder="Enter custom activity name"
+                          {...field}
+                          data-testid="input-custom-activity"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+            </div>
+
+            {/* Date Selection */}
             <FormField
               control={form.control}
-              name="activityId"
+              name="selectedDate"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Activity</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger data-testid="select-activity">
-                        <SelectValue placeholder="Select an activity" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {activities.map((activity) => (
-                        <SelectItem key={activity.id} value={activity.id}>
-                          <div className="flex items-center space-x-2">
-                            <div className={`w-3 h-3 rounded-full ${getColorDot(activity.color)}`} />
-                            <span>{activity.title}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <FormItem className="flex flex-col">
+                  <FormLabel>Date</FormLabel>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button
+                          variant={"outline"}
+                          className={cn(
+                            "w-full pl-3 text-left font-normal",
+                            !field.value && "text-muted-foreground"
+                          )}
+                        >
+                          {field.value ? (
+                            format(field.value, "PPP")
+                          ) : (
+                            <span>Pick a date</span>
+                          )}
+                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={field.value}
+                        onSelect={field.onChange}
+                        disabled={(date) =>
+                          date < new Date("1900-01-01")
+                        }
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
                   <FormMessage />
                 </FormItem>
               )}
@@ -267,13 +419,42 @@ export function BlockModal({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Start Time</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="time"
-                        {...field}
-                        data-testid="input-start-time"
-                      />
-                    </FormControl>
+                    <div className="flex items-center space-x-2">
+                      <FormControl>
+                        <Input
+                          type="time"
+                          {...field}
+                          data-testid="input-start-time"
+                          className="flex-1"
+                        />
+                      </FormControl>
+                      <div className="flex flex-col space-y-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-6 w-6 p-0"
+                          onClick={() => {
+                            const newTime = adjustTime(field.value, 5);
+                            field.onChange(newTime);
+                          }}
+                        >
+                          <ChevronUp className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-6 w-6 p-0"
+                          onClick={() => {
+                            const newTime = adjustTime(field.value, -5);
+                            field.onChange(newTime);
+                          }}
+                        >
+                          <ChevronDown className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -285,13 +466,42 @@ export function BlockModal({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>End Time</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="time"
-                        {...field}
-                        data-testid="input-end-time"
-                      />
-                    </FormControl>
+                    <div className="flex items-center space-x-2">
+                      <FormControl>
+                        <Input
+                          type="time"
+                          {...field}
+                          data-testid="input-end-time"
+                          className="flex-1"
+                        />
+                      </FormControl>
+                      <div className="flex flex-col space-y-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-6 w-6 p-0"
+                          onClick={() => {
+                            const newTime = adjustTime(field.value, 5);
+                            field.onChange(newTime);
+                          }}
+                        >
+                          <ChevronUp className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-6 w-6 p-0"
+                          onClick={() => {
+                            const newTime = adjustTime(field.value, -5);
+                            field.onChange(newTime);
+                          }}
+                        >
+                          <ChevronDown className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}

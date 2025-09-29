@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { DndContext, DragEndEvent, DragOverlay, closestCenter } from "@dnd-kit/core";
@@ -18,6 +18,8 @@ import {
   AlertTriangle,
   Users,
   UserCheck,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
 import { ScheduleGrid } from "@/components/schedule-grid";
@@ -33,6 +35,19 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
+// Helper function to get the current week start date (Monday)
+const getCurrentWeekStartDate = (): string => {
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  
+  // Calculate days to Monday (start of week)
+  const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Sunday = 0, so go back 6 days to get Monday
+  
+  const currentMonday = new Date(today);
+  currentMonday.setDate(today.getDate() + daysToMonday);
+  return currentMonday.toISOString().split('T')[0];
+};
+
 export default function Schedule() {
   const [selectedDate, setSelectedDate] = useState(getCurrentDate());
   const [viewMode, setViewMode] = useState<"master" | "student" | "aide">("master");
@@ -43,15 +58,60 @@ export default function Schedule() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const { toast } = useToast();
 
+  // Navigation functions
+  const goToPreviousWeek = () => {
+    const currentDate = new Date(selectedDate + 'T00:00:00');
+    currentDate.setDate(currentDate.getDate() - 7);
+    setSelectedDate(currentDate.toISOString().split('T')[0]);
+  };
+
+  const goToNextWeek = () => {
+    const currentDate = new Date(selectedDate + 'T00:00:00');
+    currentDate.setDate(currentDate.getDate() + 7);
+    setSelectedDate(currentDate.toISOString().split('T')[0]);
+  };
+
+  const goToPreviousDay = () => {
+    const currentDate = new Date(selectedDate + 'T00:00:00');
+    currentDate.setDate(currentDate.getDate() - 1);
+    setSelectedDate(currentDate.toISOString().split('T')[0]);
+  };
+
+  const goToNextDay = () => {
+    const currentDate = new Date(selectedDate + 'T00:00:00');
+    currentDate.setDate(currentDate.getDate() + 1);
+    setSelectedDate(currentDate.toISOString().split('T')[0]);
+  };
+
+  const goToToday = () => {
+    if (calendarView === "week") {
+      setSelectedDate(getCurrentWeekStartDate());
+    } else {
+      setSelectedDate(getCurrentDate());
+    }
+  };
+
+  // Update selectedDate when calendar view changes
+  React.useEffect(() => {
+    if (calendarView === "week") {
+      setSelectedDate(getCurrentWeekStartDate());
+    } else {
+      setSelectedDate(getCurrentDate());
+    }
+  }, [calendarView]);
+
   // Helper function to get week dates
   const getWeekDates = (selectedDate: string): string[] => {
     const date = new Date(selectedDate + 'T00:00:00');
-    const dayOfWeek = date.getDay();
+    const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    
+    // Find the Monday of the week containing the selected date
     const startOfWeek = new Date(date);
-    startOfWeek.setDate(date.getDate() - dayOfWeek);
+    const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Sunday = 0, so go back 6 days to get Monday
+    startOfWeek.setDate(date.getDate() + daysToMonday);
     
     const weekDates = [];
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 5; i++) { // Only 5 days: Monday to Friday
       const weekDate = new Date(startOfWeek);
       weekDate.setDate(startOfWeek.getDate() + i);
       weekDates.push(weekDate.toISOString().split('T')[0]);
@@ -378,15 +438,63 @@ export default function Schedule() {
               </div>
             )}
 
-            {/* Date Picker */}
+            {/* Navigation Controls */}
             <div className="flex items-center space-x-2">
-              <Input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-40"
-                data-testid="input-date"
-              />
+              {calendarView === "week" ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={goToPreviousWeek}
+                    data-testid="button-previous-week"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={goToToday}
+                    data-testid="button-today"
+                  >
+                    Today
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={goToNextWeek}
+                    data-testid="button-next-week"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={goToPreviousDay}
+                    data-testid="button-previous-day"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={goToToday}
+                    data-testid="button-today"
+                  >
+                    Today
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={goToNextDay}
+                    data-testid="button-next-day"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
             </div>
             
             {/* Template Controls */}
