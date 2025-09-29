@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { DndContext, DragEndEvent, rectIntersection } from "@dnd-kit/core";
+import { DndContext, DragEndEvent, DragOverlay, closestCenter } from "@dnd-kit/core";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -31,7 +31,7 @@ import {
   deleteTemplateFromLocalStorage,
 } from "@/lib/templates";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export default function Schedule() {
   const [selectedDate, setSelectedDate] = useState(getCurrentDate());
@@ -40,7 +40,24 @@ export default function Schedule() {
   const [calendarView, setCalendarView] = useState<"day" | "week">("day");
   const [templateName, setTemplateName] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [activeId, setActiveId] = useState<string | null>(null);
   const { toast } = useToast();
+
+  // Helper function to get week dates
+  const getWeekDates = (selectedDate: string): string[] => {
+    const date = new Date(selectedDate + 'T00:00:00');
+    const dayOfWeek = date.getDay();
+    const startOfWeek = new Date(date);
+    startOfWeek.setDate(date.getDate() - dayOfWeek);
+    
+    const weekDates = [];
+    for (let i = 0; i < 7; i++) {
+      const weekDate = new Date(startOfWeek);
+      weekDate.setDate(startOfWeek.getDate() + i);
+      weekDates.push(weekDate.toISOString().split('T')[0]);
+    }
+    return weekDates;
+  };
 
   const { data: students = [] } = useQuery<Student[]>({
     queryKey: ["/api/students"],
@@ -55,15 +72,26 @@ export default function Schedule() {
   });
 
   const { data: blocks = [] } = useQuery<Block[]>({
-    queryKey: ["/api/blocks", selectedDate],
+    queryKey: ["/api/blocks", calendarView, selectedDate],
     queryFn: async () => {
-      const res = await fetch(`/api/blocks?date=${selectedDate}`, {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        throw new Error(`${res.status}: ${res.statusText}`);
+      if (calendarView === "day") {
+        const res = await fetch(`/api/blocks?date=${selectedDate}`, {
+          credentials: "include",
+        });
+        if (!res.ok) {
+          throw new Error(`${res.status}: ${res.statusText}`);
+        }
+        return res.json();
+      } else {
+        // Week view - fetch blocks for all days in the week
+        const datesToFetch = getWeekDates(selectedDate);
+        const promises = datesToFetch.map(date => 
+          fetch(`/api/blocks?date=${date}`, { credentials: "include" })
+            .then(res => res.ok ? res.json() : [])
+        );
+        const results = await Promise.all(promises);
+        return results.flat();
       }
-      return res.json();
     },
   });
 
@@ -78,49 +106,100 @@ export default function Schedule() {
   const availableAides = aides.length;
   const templateNames = getTemplateNames();
 
-  // Drag and drop mutations
+  // Block update mutation with optimistic updates
   const updateBlockMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Block }) => 
-      apiRequest("PUT", `/api/blocks/${id}`, data),
-    onSuccess: () => {
-      // Invalidate blocks query to refresh data
-      window.location.reload();
+    mutationFn: ({ id, data }: { id: string; data: Block }) => {
+      console.log('🚀 API call starting:', { id, data });
+      return apiRequest("PUT", `/api/blocks/${id}`, data);
     },
-    onError: () => {
-      toast({ title: "Failed to update block", variant: "destructive" });
+    onMutate: async ({ id, data }) => {
+      console.log('🔄 Optimistic update starting for block:', id);
+      
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ["/api/blocks"] });
+      
+      // Snapshot the previous value
+      const previousBlocks = queryClient.getQueryData(["/api/blocks", calendarView, selectedDate]);
+      
+      // Optimistically update the cache
+      queryClient.setQueryData(["/api/blocks", calendarView, selectedDate], (old: Block[] = []) => {
+        console.log('🔄 Optimistic update - old data:', old);
+        const updated = old.map(block => 
+          block.id === id ? { ...block, ...data } : block
+        );
+        console.log('🔄 Optimistic update - new data:', updated);
+        return updated;
+      });
+      
+      return { previousBlocks };
+    },
+    onSuccess: (result) => {
+      console.log('✅ Block update successful:', result);
+      // Invalidate all block queries to ensure consistency
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+      toast({ title: "Block moved successfully" });
+    },
+    onError: (error, variables, context) => {
+      console.error('❌ Block update failed:', error);
+      
+      // Rollback optimistic update
+      if (context?.previousBlocks) {
+        queryClient.setQueryData(["/api/blocks", calendarView, selectedDate], context.previousBlocks);
+      }
+      
+      toast({ title: "Failed to move block", variant: "destructive" });
     },
   });
 
-  const handleEntityDrop = (activeId: string, destinationId: string) => {
-    // Extract entity type and ID from activeId
-    const isStudent = activeId.startsWith('student-');
-    const entityId = activeId.replace(/^(student-|aide-)/, '');
+  // Drag handlers
+  const onDragStart = (event: any) => {
+    setActiveId(event.active.id);
+  };
+
+  const onDragEnd = (event: DragEndEvent) => {
+    console.log('🎯 onDragEnd called:', event);
+    setActiveId(null);
     
-    // Find the target block
-    const blockId = destinationId.replace('block-', '');
-    const targetBlock = blocks.find(block => block.id === blockId);
-    
-    if (!targetBlock) {
-      console.log('Target block not found for ID:', blockId);
+    if (!event.over) {
+      console.log('❌ No drop target found');
       return;
     }
 
-    // Update the block with the new entity
-    const updatedBlock = { ...targetBlock };
+    const activeId = event.active.id as string;
+    const destinationId = event.over.id as string;
     
+    console.log('📍 Drag details:', { activeId, destinationId });
+
+    // Only handle entity drops (students/aides to blocks)
+    if (activeId.startsWith('student-') || activeId.startsWith('aide-')) {
+      console.log('👥 Handling entity drop');
+      handleEntityDrop(activeId, destinationId);
+      return;
+    }
+
+    // Block dragging is disabled - just log for debugging
+    console.log('📦 Block dragging disabled - ignoring drag operation');
+  };
+
+  const handleEntityDrop = (activeId: string, destinationId: string) => {
+    const isStudent = activeId.startsWith('student-');
+    const entityId = activeId.replace(/^(student-|aide-)/, '');
+    const blockId = destinationId.replace('block-', '');
+    
+    const targetBlock = blocks.find(block => block.id === blockId);
+    if (!targetBlock) return;
+
+    const updatedBlock = { ...targetBlock };
     if (isStudent) {
-      // Add student if not already present
       if (!updatedBlock.studentIds.includes(entityId)) {
         updatedBlock.studentIds = [...updatedBlock.studentIds, entityId];
       }
     } else {
-      // Add aide if not already present
       if (!updatedBlock.aideIds.includes(entityId)) {
         updatedBlock.aideIds = [...updatedBlock.aideIds, entityId];
       }
     }
 
-    // Update the block
     updateBlockMutation.mutate({
       id: blockId,
       data: updatedBlock,
@@ -133,27 +212,8 @@ export default function Schedule() {
     });
   };
 
-  const onDragEnd = (event: DragEndEvent) => {
-    console.log('onDragEnd called with event:', event);
-    
-    if (!event.over) {
-      console.log('No destination, exiting');
-      return;
-    }
 
-    const activeId = event.active.id as string;
-    const destinationId = event.over.id as string;
 
-    // Check if we're dragging a student or aide from the sidebar
-    if (activeId.startsWith('student-') || activeId.startsWith('aide-')) {
-      handleEntityDrop(activeId, destinationId);
-      return;
-    }
-
-    // For block dragging, we'll let the ScheduleGrid handle it
-    // by passing the event down
-    console.log('Block drag detected, passing to ScheduleGrid');
-  };
 
   const handleViewModeChange = (mode: string) => {
     setViewMode(mode as "master" | "student" | "aide");
@@ -374,8 +434,9 @@ export default function Schedule() {
       </header>
 
       <DndContext 
+        onDragStart={onDragStart}
         onDragEnd={onDragEnd}
-        collisionDetection={rectIntersection}
+        collisionDetection={closestCenter}
       >
         <div className="flex h-screen">
           <Sidebar onEntityUpdate={() => {
@@ -394,6 +455,15 @@ export default function Schedule() {
             </div>
           </main>
         </div>
+        
+        <DragOverlay>
+          {activeId ? (
+            <div className="bg-primary text-primary-foreground p-2 rounded shadow-lg opacity-90">
+              {activeId.startsWith('student-') ? 'Student' : 
+               activeId.startsWith('aide-') ? 'Aide' : 'Block'}
+            </div>
+          ) : null}
+        </DragOverlay>
       </DndContext>
     </div>
   );

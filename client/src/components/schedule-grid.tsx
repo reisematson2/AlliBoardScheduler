@@ -73,6 +73,135 @@ function Draggable({ children, draggableId, index }: DraggableProps) {
     </div>
   );
 }
+
+// Droppable Block Component
+interface DroppableBlockProps {
+  block: Block;
+  blockStyle: any;
+  onBlockClick: (block: Block) => void;
+  onResizeStart: (blockId: string, type: 'top' | 'bottom', e: React.MouseEvent) => void;
+  activity: any;
+  conflict: any;
+  getStudent: (id: string) => any;
+  getAide: (id: string) => any;
+  getEntityBadgeClass: (color: string) => string;
+  getBlockTooltipContent: (block: Block) => React.ReactNode;
+  formatTimeDisplay: (time: string) => string;
+}
+
+function DroppableBlock({ 
+  block, 
+  blockStyle, 
+  onBlockClick, 
+  onResizeStart,
+  activity,
+  conflict,
+  getStudent,
+  getAide,
+  getEntityBadgeClass,
+  getBlockTooltipContent,
+  formatTimeDisplay
+}: DroppableBlockProps) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `block-${block.id}`,
+  });
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div
+            ref={setNodeRef}
+            className={`${blockStyle.className} ${isOver ? 'ring-2 ring-blue-400 ring-opacity-50' : ''}`}
+            style={{
+              ...blockStyle.style,
+              pointerEvents: 'auto',
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onBlockClick(block);
+            }}
+            data-testid={`block-${block.id}`}
+          >
+            {/* Top resize handle */}
+            <div
+              className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-blue-200/20 transition-colors z-20"
+              onMouseDown={(e) => onResizeStart(block.id, 'top', e)}
+              title="Resize from top"
+            />
+            
+            {/* Bottom resize handle */}
+            <div
+              className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-blue-200/20 transition-colors z-20"
+              onMouseDown={(e) => onResizeStart(block.id, 'bottom', e)}
+              title="Resize from bottom"
+            />
+            
+            <div className="flex items-center justify-between mb-1">
+              {conflict && (
+                <div className="text-xs text-destructive">
+                  {conflict.type === "aide" ? (
+                    <AlertTriangle className="h-3 w-3" />
+                  ) : (
+                    <AlertCircle className="h-3 w-3" />
+                  )}
+                </div>
+              )}
+            </div>
+            
+            <div className="flex h-full">
+              {/* Left side: Activity name and time */}
+              <div className="flex flex-col flex-1 min-w-0">
+                <div className="text-xs font-medium text-foreground line-clamp-1">
+                  {activity?.title || "Unknown Activity"}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
+                </div>
+              </div>
+              
+              {/* Right side: Names */}
+              <div className="flex flex-col gap-0.5 ml-2 max-h-full overflow-hidden">
+                {block.studentIds.slice(0, 2).map(studentId => {
+                  const student = getStudent(studentId);
+                  return student ? (
+                    <div
+                      key={studentId}
+                      className={`text-xs px-1 py-0.5 rounded ${getEntityBadgeClass(student.color)} truncate leading-tight`}
+                      data-testid={`student-badge-${student.id}`}
+                    >
+                      {student.name}
+                    </div>
+                  ) : null;
+                })}
+                {block.aideIds.slice(0, 1).map(aideId => {
+                  const aide = getAide(aideId);
+                  return aide ? (
+                    <div
+                      key={aideId}
+                      className={`text-xs px-1 py-0.5 rounded border ${getEntityBadgeClass(aide.color)} truncate leading-tight`}
+                      data-testid={`aide-badge-${aide.id}`}
+                    >
+                      {aide.name}
+                    </div>
+                  ) : null;
+                })}
+                {(block.studentIds.length > 2 || block.aideIds.length > 1) && (
+                  <div className="text-xs px-1 py-0.5 rounded border text-muted-foreground bg-muted/50 leading-tight">
+                    +{Math.max(0, block.studentIds.length - 2) + Math.max(0, block.aideIds.length - 1)}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs">
+          {getBlockTooltipContent(block)}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 import { 
   StickyNote, 
   GripVertical, 
@@ -254,14 +383,18 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
   });
 
   const updateBlockMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) => 
-      apiRequest("PUT", `/api/blocks/${id}`, data),
-    onSuccess: () => {
+    mutationFn: ({ id, data }: { id: string; data: any }) => {
+      console.log('updateBlockMutation called with:', { id, data });
+      return apiRequest("PUT", `/api/blocks/${id}`, data);
+    },
+    onSuccess: (result) => {
+      console.log('updateBlockMutation success:', result);
       // Invalidate cache with all relevant variables
       queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
       toast({ title: "Block updated successfully" });
     },
-    onError: () => {
+    onError: (error) => {
+      console.error('updateBlockMutation error:', error);
       toast({ title: "Failed to update block", variant: "destructive" });
     },
   });
@@ -503,6 +636,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
   const handleTimeSlotClick = (time: string) => {
     handleAddBlock(time);
   };
+
 
 
   const handleResizeStart = (blockId: string, type: 'top' | 'bottom', e: React.MouseEvent) => {
@@ -747,124 +881,20 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                               const conflict = conflicts.get(block.id);
 
                             return (
-                              <Draggable key={block.id} draggableId={block.id} index={groupIndex * 100 + blockIndex}>
-                                {(provided: any, snapshot: any) => {
-                                  // Make the block droppable for entities
-                                  const { setNodeRef: setDroppableRef, isOver } = useDroppable({
-                                    id: `block-${block.id}`,
-                                  });
-
-                                  return (
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <div
-                                            ref={(node) => {
-                                              provided.innerRef(node);
-                                              setDroppableRef(node);
-                                            }}
-                                            {...provided.draggableProps}
-                                            className={`${blockStyle.className} ${isOver ? 'ring-2 ring-blue-400 ring-opacity-50' : ''}`}
-                                            style={{
-                                              ...provided.draggableProps.style,
-                                              ...blockStyle.style,
-                                              transform: snapshot.isDragging
-                                                ? provided.draggableProps.style?.transform
-                                                : 'none',
-                                              pointerEvents: 'auto',
-                                            }}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleBlockClick(block);
-                                            }}
-                                            data-testid={`block-${block.id}`}
-                                          >
-                                          {/* Top resize handle */}
-                                          <div
-                                            className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-blue-200/20 transition-colors z-20"
-                                            onMouseDown={(e) => handleResizeStart(block.id, 'top', e)}
-                                            title="Resize from top"
-                                          />
-                                          
-                                          {/* Bottom resize handle */}
-                                          <div
-                                            className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-blue-200/20 transition-colors z-20"
-                                            onMouseDown={(e) => handleResizeStart(block.id, 'bottom', e)}
-                                            title="Resize from bottom"
-                                          />
-                                          
-                                          <div className="flex items-center justify-between mb-1">
-                                            <div
-                                              {...provided.dragHandleProps}
-                                              className="cursor-grab active:cursor-grabbing"
-                                            >
-                                              <GripVertical className="h-3 w-3 text-muted-foreground/50" />
-                                            </div>
-                                            {conflict && (
-                                              <div className="text-xs text-destructive">
-                                                {conflict.type === "aide" ? (
-                                                  <AlertTriangle className="h-3 w-3" />
-                                                ) : (
-                                                  <AlertCircle className="h-3 w-3" />
-                                                )}
-                                              </div>
-                                            )}
-                                          </div>
-                                          
-                                          <div className="flex h-full">
-                                            {/* Left side: Activity name and time */}
-                                            <div className="flex flex-col flex-1 min-w-0">
-                                              <div className="text-xs font-medium text-foreground line-clamp-1">
-                                                {activity?.title || "Unknown Activity"}
-                                              </div>
-                                              <div className="text-xs text-muted-foreground">
-                                                {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
-                                              </div>
-                                            </div>
-                                            
-                                            {/* Right side: Names */}
-                                            <div className="flex flex-col gap-0.5 ml-2 max-h-full overflow-hidden">
-                                              {block.studentIds.slice(0, 2).map(studentId => {
-                                                const student = getStudent(studentId);
-                                                return student ? (
-                                                  <div
-                                                    key={studentId}
-                                                    className={`text-xs px-1 py-0.5 rounded ${getEntityBadgeClass(student.color)} truncate leading-tight`}
-                                                    data-testid={`student-badge-${student.id}`}
-                                                  >
-                                                    {student.name}
-                                                  </div>
-                                                ) : null;
-                                              })}
-                                              {block.aideIds.slice(0, 1).map(aideId => {
-                                                const aide = getAide(aideId);
-                                                return aide ? (
-                                                  <div
-                                                    key={aideId}
-                                                    className={`text-xs px-1 py-0.5 rounded border ${getEntityBadgeClass(aide.color)} truncate leading-tight`}
-                                                    data-testid={`aide-badge-${aide.id}`}
-                                                  >
-                                                    {aide.name}
-                                                  </div>
-                                                ) : null;
-                                              })}
-                                              {(block.studentIds.length > 2 || block.aideIds.length > 1) && (
-                                                <div className="text-xs px-1 py-0.5 rounded border text-muted-foreground bg-muted/50 leading-tight">
-                                                  +{Math.max(0, block.studentIds.length - 2) + Math.max(0, block.aideIds.length - 1)}
-                                                </div>
-                                              )}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </TooltipTrigger>
-                                      <TooltipContent side="top" className="max-w-xs">
-                                        {getBlockTooltipContent(block)}
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                  );
-                                }}
-                              </Draggable>
+                              <DroppableBlock 
+                                key={block.id} 
+                                block={block} 
+                                blockStyle={blockStyle} 
+                                onBlockClick={handleBlockClick}
+                                onResizeStart={handleResizeStart}
+                                activity={activity}
+                                conflict={conflict}
+                                getStudent={getStudent}
+                                getAide={getAide}
+                                getEntityBadgeClass={getEntityBadgeClass}
+                                getBlockTooltipContent={getBlockTooltipContent}
+                                formatTimeDisplay={formatTimeDisplay}
+                              />
                             );
                             })
                           )}
@@ -956,124 +986,20 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                         const conflict = conflicts.get(block.id);
 
                       return (
-                        <Draggable key={block.id} draggableId={block.id} index={groupIndex * 100 + blockIndex}>
-                          {(provided: any, snapshot: any) => {
-                            // Make the block droppable for entities
-                            const { setNodeRef: setDroppableRef, isOver } = useDroppable({
-                              id: `block-${block.id}`,
-                            });
-
-                            return (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div
-                                      ref={(node) => {
-                                        provided.innerRef(node);
-                                        setDroppableRef(node);
-                                      }}
-                                      {...provided.draggableProps}
-                                      className={`${blockStyle.className} ${isOver ? 'ring-2 ring-blue-400 ring-opacity-50' : ''}`}
-                                      style={{
-                                        ...provided.draggableProps.style,
-                                        ...blockStyle.style,
-                                        transform: snapshot.isDragging
-                                          ? provided.draggableProps.style?.transform
-                                          : 'none',
-                                        pointerEvents: 'auto',
-                                      }}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleBlockClick(block);
-                                      }}
-                                      data-testid={`block-${block.id}`}
-                                    >
-                                    {/* Top resize handle */}
-                                    <div
-                                      className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-blue-200/20 transition-colors z-20"
-                                      onMouseDown={(e) => handleResizeStart(block.id, 'top', e)}
-                                      title="Resize from top"
-                                    />
-                                    
-                                    {/* Bottom resize handle */}
-                                    <div
-                                      className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-blue-200/20 transition-colors z-20"
-                                      onMouseDown={(e) => handleResizeStart(block.id, 'bottom', e)}
-                                      title="Resize from bottom"
-                                    />
-                                    
-                                    <div className="flex items-center justify-between mb-1">
-                                      <div
-                                        {...provided.dragHandleProps}
-                                        className="cursor-grab active:cursor-grabbing"
-                                      >
-                                        <GripVertical className="h-3 w-3 text-muted-foreground/50" />
-                                      </div>
-                                      {conflict && (
-                                        <div className="text-xs text-destructive">
-                                          {conflict.type === "aide" ? (
-                                            <AlertTriangle className="h-3 w-3" />
-                                          ) : (
-                                            <AlertCircle className="h-3 w-3" />
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                    
-                                    <div className="flex h-full">
-                                      {/* Left side: Activity name and time */}
-                                      <div className="flex flex-col flex-1 min-w-0">
-                                        <div className="text-xs font-medium text-foreground line-clamp-1">
-                                          {activity?.title || "Unknown Activity"}
-                                        </div>
-                                        <div className="text-xs text-muted-foreground">
-                                          {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
-                                        </div>
-                                      </div>
-                                      
-                                      {/* Right side: Names */}
-                                      <div className="flex flex-col gap-0.5 ml-2 max-h-full overflow-hidden">
-                                        {block.studentIds.slice(0, 2).map(studentId => {
-                                          const student = getStudent(studentId);
-                                          return student ? (
-                                            <div
-                                              key={studentId}
-                                              className={`text-xs px-1 py-0.5 rounded ${getEntityBadgeClass(student.color)} truncate leading-tight`}
-                                              data-testid={`student-badge-${student.id}`}
-                                            >
-                                              {student.name}
-                                            </div>
-                                          ) : null;
-                                        })}
-                                        {block.aideIds.slice(0, 1).map(aideId => {
-                                          const aide = getAide(aideId);
-                                          return aide ? (
-                                            <div
-                                              key={aideId}
-                                              className={`text-xs px-1 py-0.5 rounded border ${getEntityBadgeClass(aide.color)} truncate leading-tight`}
-                                              data-testid={`aide-badge-${aide.id}`}
-                                            >
-                                              {aide.name}
-                                            </div>
-                                          ) : null;
-                                        })}
-                                        {(block.studentIds.length > 2 || block.aideIds.length > 1) && (
-                                          <div className="text-xs px-1 py-0.5 rounded border text-muted-foreground bg-muted/50 leading-tight">
-                                            +{Math.max(0, block.studentIds.length - 2) + Math.max(0, block.aideIds.length - 1)}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </TooltipTrigger>
-                                <TooltipContent side="top" className="max-w-xs">
-                                  {getBlockTooltipContent(block)}
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                            );
-                          }}
-                        </Draggable>
+                        <DroppableBlock 
+                          key={block.id} 
+                          block={block} 
+                          blockStyle={blockStyle} 
+                          onBlockClick={handleBlockClick}
+                          onResizeStart={handleResizeStart}
+                          activity={activity}
+                          conflict={conflict}
+                          getStudent={getStudent}
+                          getAide={getAide}
+                          getEntityBadgeClass={getEntityBadgeClass}
+                          getBlockTooltipContent={getBlockTooltipContent}
+                          formatTimeDisplay={formatTimeDisplay}
+                        />
                       );
                       })
                     )}

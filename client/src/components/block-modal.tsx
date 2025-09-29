@@ -114,7 +114,8 @@ export function BlockModal({
       const blockCount = result?.count || 1;
       const isRecurring = blockCount > 1;
       
-      queryClient.invalidateQueries({ queryKey: ["/api/blocks", currentDate] });
+      // Invalidate all block queries to ensure updates are reflected
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
       
       if (isRecurring) {
         toast({ 
@@ -133,7 +134,8 @@ export function BlockModal({
   const updateMutation = useMutation({
     mutationFn: (data: any) => apiRequest("PUT", `/api/blocks/${block!.id}`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/blocks", currentDate] });
+      // Invalidate all block queries to ensure updates are reflected
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
       toast({ title: "Schedule block updated successfully" });
       onClose();
     },
@@ -145,7 +147,8 @@ export function BlockModal({
   const deleteMutation = useMutation({
     mutationFn: () => apiRequest("DELETE", `/api/blocks/${block!.id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/blocks", currentDate] });
+      // Invalidate all block queries to ensure updates are reflected
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
       toast({ title: "Schedule block deleted successfully" });
       onClose();
     },
