@@ -1,9 +1,82 @@
 import { useState, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { DragDropContext, Droppable, Draggable, DropResult } from "react-beautiful-dnd";
+import { 
+  DndContext, 
+  DragEndEvent, 
+  useDraggable, 
+  useDroppable,
+  closestCenter,
+  pointerWithin,
+  rectIntersection
+} from "@dnd-kit/core";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+
+// Custom Droppable component for dnd-kit
+interface DroppableProps {
+  children: (provided: any, snapshot: any) => React.ReactNode;
+  droppableId: string;
+}
+
+function Droppable({ children, droppableId }: DroppableProps) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: droppableId,
+  });
+
+  const provided = {
+    droppableProps: {
+      ref: setNodeRef,
+    },
+    innerRef: setNodeRef,
+  };
+
+  const snapshot = {
+    isDraggingOver: isOver,
+  };
+
+  return (
+    <div ref={setNodeRef} data-droppable-id={droppableId}>
+      {children(provided, snapshot)}
+    </div>
+  );
+}
+
+// Custom Draggable component for dnd-kit
+interface DraggableProps {
+  children: (provided: any, snapshot: any) => React.ReactNode;
+  draggableId: string;
+  index: number;
+}
+
+function Draggable({ children, draggableId, index }: DraggableProps) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: draggableId,
+  });
+
+  const style = transform ? {
+    transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+  } : undefined;
+
+  const provided = {
+    draggableProps: {
+      ...attributes,
+      style,
+    },
+    dragHandleProps: listeners,
+    innerRef: setNodeRef,
+  };
+
+  const snapshot = {
+    isDragging,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      {children(provided, snapshot)}
+    </div>
+  );
+}
 import { 
   StickyNote, 
   GripVertical, 
@@ -290,15 +363,15 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     handleAddBlock(time);
   };
 
-  const onDragEnd = (result: DropResult) => {
-    console.log('onDragEnd called with result:', result);
+  const onDragEnd = (event: DragEndEvent) => {
+    console.log('onDragEnd called with event:', event);
     
-    if (!result.destination) {
+    if (!event.over) {
       console.log('No destination, exiting');
       return;
     }
 
-    const blockId = result.draggableId;
+    const blockId = event.active.id as string;
     const block = allBlocks.find((b: Block) => b.id === blockId);
     if (!block) {
       console.log('Block not found for ID:', blockId);
@@ -308,7 +381,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     console.log('Processing drag for block:', block);
 
     // Parse the destination to get the target time and date
-    const destinationId = result.destination.droppableId;
+    const destinationId = event.over.id as string;
     let newStartTime: string;
     let newDate: string = block.date; // Default to existing date
 
@@ -506,8 +579,10 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
         </div>
 
         <div className="p-4">
-          {/* Temporarily disable DragDropContext to bypass Vite overlay issue */}
-          <div>
+          <DndContext 
+            onDragEnd={onDragEnd}
+            collisionDetection={rectIntersection}
+          >
             {calendarView === "week" ? (
               /* Week View Layout */
               <div className="grid grid-cols-[80px_repeat(7,1fr)] gap-0 min-h-[600px]">
@@ -540,22 +615,31 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                       
                       {/* Day Schedule Content */}
                       <div className="relative" style={{ minHeight: "512px" }}>
-                        {/* Individual Time Slots for this day */}
+                        {/* Individual Time Slot Droppables for this day */}
                         {timeSlots.map((timeSlot, index) => (
-                          <div
-                            key={`timeslot-${date}-${index}`}
-                            className={`droppable-area h-16 cursor-pointer hover:bg-accent/50 transition-colors ${
-                              timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
-                            }`}
-                            onClick={() => handleTimeSlotClick(timeSlot.time)}
-                            style={{ 
-                              position: "absolute",
-                              top: `${index * 64}px`,
-                              left: 0,
-                              right: 0,
-                              zIndex: 1,
-                            }}
-                          />
+                          <Droppable key={`timeslot-${date}-${index}`} droppableId={`timeslot-${date}-${index}`}>
+                            {(provided: any, snapshot: any) => (
+                              <div
+                                ref={provided.innerRef}
+                                {...provided.droppableProps}
+                                className={`droppable-area h-16 cursor-pointer hover:bg-accent/50 transition-colors ${
+                                  timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
+                                } ${
+                                  snapshot.isDraggingOver ? "bg-primary/10 border-primary" : ""
+                                }`}
+                                onClick={() => handleTimeSlotClick(timeSlot.time)}
+                                style={{ 
+                                  position: "absolute",
+                                  top: `${index * 64}px`,
+                                  left: 0,
+                                  right: 0,
+                                  zIndex: snapshot.isDraggingOver ? 5 : 1,
+                                }}
+                              >
+                                {provided.placeholder}
+                              </div>
+                            )}
+                          </Droppable>
                         ))}
 
                         {/* Schedule Blocks for this day - positioned but not in separate droppable */}
@@ -566,21 +650,33 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                             const conflict = conflicts.get(block.id);
 
                             return (
-                              <div
-                                key={block.id}
-                                className={blockStyle.className}
-                                style={{
-                                  ...blockStyle.style,
-                                  pointerEvents: 'auto',
-                                }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleBlockClick(block);
-                                }}
-                                data-testid={`block-${block.id}`}
-                              >
+                              <Draggable key={block.id} draggableId={block.id} index={index}>
+                                {(provided: any, snapshot: any) => (
+                                  <div
+                                    ref={provided.innerRef}
+                                    {...provided.draggableProps}
+                                    className={blockStyle.className}
+                                    style={{
+                                      ...provided.draggableProps.style,
+                                      ...blockStyle.style,
+                                      transform: snapshot.isDragging
+                                        ? provided.draggableProps.style?.transform
+                                        : 'none',
+                                      pointerEvents: 'auto',
+                                    }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleBlockClick(block);
+                                    }}
+                                    data-testid={`block-${block.id}`}
+                                  >
                                     <div className="flex items-center justify-between mb-1">
-                                      <GripVertical className="h-3 w-3 text-muted-foreground/50" />
+                                      <div
+                                        {...provided.dragHandleProps}
+                                        className="cursor-grab active:cursor-grabbing"
+                                      >
+                                        <GripVertical className="h-3 w-3 text-muted-foreground/50" />
+                                      </div>
                                       {conflict && (
                                         <div className="text-xs text-destructive">
                                           {conflict.type === "aide" ? (
@@ -593,7 +689,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                                     </div>
                                     
                                     <div className="text-xs font-medium text-foreground mb-1 line-clamp-2">
-                                      {activity?.name || "Unknown Activity"}
+                                      {activity?.title || "Unknown Activity"}
                                     </div>
                                     
                                     <div className="text-xs text-muted-foreground mb-2">
@@ -629,6 +725,8 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                                       })}
                                     </div>
                                   </div>
+                                )}
+                              </Draggable>
                             );
                           })}
                         </div>
@@ -658,22 +756,31 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
 
                 {/* Schedule Content */}
                 <div className="relative" style={{ minHeight: "512px" }}>
-                  {/* Individual Time Slots */}
+                  {/* Individual Time Slot Droppables */}
                   {timeSlots.map((timeSlot, index) => (
-                    <div
-                      key={`timeslot-${index}`}
-                      className={`droppable-area h-16 cursor-pointer hover:bg-accent/50 transition-colors ${
-                        timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
-                      }`}
-                      onClick={() => handleTimeSlotClick(timeSlot.time)}
-                      style={{ 
-                        position: "absolute",
-                        top: `${index * 64}px`,
-                        left: 0,
-                        right: 0,
-                        zIndex: 1,
-                      }}
-                    />
+                    <Droppable key={`timeslot-${index}`} droppableId={`timeslot-${index}`}>
+                      {(provided: any, snapshot: any) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.droppableProps}
+                          className={`droppable-area h-16 cursor-pointer hover:bg-accent/50 transition-colors ${
+                            timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
+                          } ${
+                            snapshot.isDraggingOver ? "bg-primary/10 border-primary" : ""
+                          }`}
+                          onClick={() => handleTimeSlotClick(timeSlot.time)}
+                          style={{ 
+                            position: "absolute",
+                            top: `${index * 64}px`,
+                            left: 0,
+                            right: 0,
+                            zIndex: snapshot.isDraggingOver ? 5 : 1,
+                          }}
+                        >
+                          {provided.placeholder}
+                        </div>
+                      )}
+                    </Droppable>
                   ))}
 
                   {/* Schedule Blocks - positioned but not in separate droppable */}
@@ -684,21 +791,33 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                       const conflict = conflicts.get(block.id);
 
                       return (
-                        <div
-                          key={block.id}
-                          className={blockStyle.className}
-                          style={{
-                            ...blockStyle.style,
-                            pointerEvents: 'auto',
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleBlockClick(block);
-                          }}
+                        <Draggable key={block.id} draggableId={block.id} index={index}>
+                          {(provided: any, snapshot: any) => (
+                            <div
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              className={blockStyle.className}
+                              style={{
+                                ...provided.draggableProps.style,
+                                ...blockStyle.style,
+                                transform: snapshot.isDragging
+                                  ? provided.draggableProps.style?.transform
+                                  : 'none',
+                                pointerEvents: 'auto',
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleBlockClick(block);
+                              }}
                               data-testid={`block-${block.id}`}
                             >
                               <div className="flex items-center justify-between mb-1">
-                                <GripVertical className="h-3 w-3 text-muted-foreground/50" />
+                                <div
+                                  {...provided.dragHandleProps}
+                                  className="cursor-grab active:cursor-grabbing"
+                                >
+                                  <GripVertical className="h-3 w-3 text-muted-foreground/50" />
+                                </div>
                                 {conflict && (
                                   <div className="text-xs text-destructive">
                                     {conflict.type === "aide" ? (
@@ -711,7 +830,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                               </div>
                               
                               <div className="text-xs font-medium text-foreground mb-1 line-clamp-2">
-                                {activity?.name || "Unknown Activity"}
+                                {activity?.title || "Unknown Activity"}
                               </div>
                               
                               <div className="text-xs text-muted-foreground mb-2">
@@ -747,13 +866,15 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                                 })}
                               </div>
                             </div>
+                          )}
+                        </Draggable>
                       );
                     })}
                   </div>
                 </div>
               </div>
             )}
-          </div>
+          </DndContext>
         </div>
       </Card>
 
