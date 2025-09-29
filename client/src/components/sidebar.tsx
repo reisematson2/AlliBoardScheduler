@@ -13,6 +13,37 @@ interface SidebarProps {
   onEntityUpdate?: () => void;
 }
 
+// Color utility functions
+const getEntityColorClasses = (color: string) => {
+  const colorMap: Record<string, string> = {
+    blue: "bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800",
+    green: "bg-green-50 border-green-200 dark:bg-green-950 dark:border-green-800",
+    purple: "bg-purple-50 border-purple-200 dark:bg-purple-950 dark:border-purple-800",
+    orange: "bg-orange-50 border-orange-200 dark:bg-orange-950 dark:border-orange-800",
+    teal: "bg-teal-50 border-teal-200 dark:bg-teal-950 dark:border-teal-800",
+    indigo: "bg-indigo-50 border-indigo-200 dark:bg-indigo-950 dark:border-indigo-800",
+    pink: "bg-pink-50 border-pink-200 dark:bg-pink-950 dark:border-pink-800",
+    yellow: "bg-yellow-50 border-yellow-200 dark:bg-yellow-950 dark:border-yellow-800",
+    red: "bg-red-50 border-red-200 dark:bg-red-950 dark:border-red-800",
+  };
+  return colorMap[color] || "bg-gray-50 border-gray-200 dark:bg-gray-950 dark:border-gray-800";
+};
+
+const getColorDot = (color: string) => {
+  const colorMap: Record<string, string> = {
+    blue: "bg-blue-500",
+    green: "bg-green-500",
+    purple: "bg-purple-500",
+    orange: "bg-orange-500",
+    teal: "bg-teal-500",
+    indigo: "bg-indigo-500",
+    pink: "bg-pink-500",
+    yellow: "bg-yellow-500",
+    red: "bg-red-500",
+  };
+  return colorMap[color] || "bg-gray-500";
+};
+
 // Draggable Student Component
 function DraggableStudent({ student, onEdit, onDelete }: { 
   student: Student; 
@@ -225,36 +256,6 @@ export function Sidebar({ onEntityUpdate }: SidebarProps) {
     setModalOpen(false);
     setEditingEntity(null);
     onEntityUpdate?.();
-  };
-
-  const getEntityColorClasses = (color: string) => {
-    const colorMap: Record<string, string> = {
-      blue: "bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800",
-      green: "bg-green-50 border-green-200 dark:bg-green-950 dark:border-green-800",
-      purple: "bg-purple-50 border-purple-200 dark:bg-purple-950 dark:border-purple-800",
-      orange: "bg-orange-50 border-orange-200 dark:bg-orange-950 dark:border-orange-800",
-      teal: "bg-teal-50 border-teal-200 dark:bg-teal-950 dark:border-teal-800",
-      indigo: "bg-indigo-50 border-indigo-200 dark:bg-indigo-950 dark:border-indigo-800",
-      pink: "bg-pink-50 border-pink-200 dark:bg-pink-950 dark:border-pink-800",
-      yellow: "bg-yellow-50 border-yellow-200 dark:bg-yellow-950 dark:border-yellow-800",
-      red: "bg-red-50 border-red-200 dark:bg-red-950 dark:border-red-800",
-    };
-    return colorMap[color] || "bg-gray-50 border-gray-200 dark:bg-gray-950 dark:border-gray-800";
-  };
-
-  const getColorDot = (color: string) => {
-    const colorMap: Record<string, string> = {
-      blue: "bg-blue-500",
-      green: "bg-green-500",
-      purple: "bg-purple-500",
-      orange: "bg-orange-500",
-      teal: "bg-teal-500",
-      indigo: "bg-indigo-500",
-      pink: "bg-pink-500",
-      yellow: "bg-yellow-500",
-      red: "bg-red-500",
-    };
-    return colorMap[color] || "bg-gray-500";
   };
 
   return (
