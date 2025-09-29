@@ -6,13 +6,23 @@ import { parseRecurrencePattern, generateRecurrenceDates } from "@shared/recurre
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Test endpoint to verify server is working
+  app.get("/api/test", (req, res) => {
+    res.json({ 
+      message: "Server is working!", 
+      timestamp: new Date().toISOString(),
+      storage: storage ? "Storage initialized" : "Storage not initialized"
+    });
+  });
+
   // Students routes
   app.get("/api/students", async (req, res) => {
     try {
       const students = await storage.getStudents();
       res.json(students);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch students" });
+      console.error("Error fetching students:", error);
+      res.status(500).json({ message: "Failed to fetch students", error: error instanceof Error ? error.message : String(error) });
     }
   });
 

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AlliBoard API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        button { padding: 10px 20px; margin: 10px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .result { margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 5px; }
+        .error { background: #f8d7da; color: #721c24; }
+        .success { background: #d4edda; color: #155724; }
+    </style>
+</head>
+<body>
+    <h1>AlliBoard API Test & Sample Data</h1>
+    
+    <div>
+        <button onclick="testAPI()">Test API Connection</button>
+        <button onclick="populateSampleData()">Populate Sample Data</button>
+        <button onclick="cleanupData()">Cleanup All Data</button>
+        <button onclick="viewData()">View Current Data</button>
+    </div>
+    
+    <div id="result"></div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        
+        async function apiRequest(method, endpoint, data = null) {
+            const url = `${API_BASE}${endpoint}`;
+            const options = {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+            };
+            
+            if (data) {
+                options.body = JSON.stringify(data);
+            }
+            
+            try {
+                const response = await fetch(url, options);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return await response.json();
+            } catch (error) {
+                throw new Error(`API Error: ${error.message}`);
+            }
+        }
+        
+        function showResult(message, isError = false) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `<div class="result ${isError ? 'error' : 'success'}">${message}</div>`;
+        }
+        
+        async function testAPI() {
+            try {
+                // First test the basic endpoint
+                const testResponse = await apiRequest('GET', '/test');
+                showResult(`✅ API Connection Successful! Server is working. Storage: ${testResponse.storage}`);
+                
+                // Then test the students endpoint
+                const students = await apiRequest('GET', '/students');
+                showResult(`✅ API Connection Successful! Found ${students.length} students.`);
+            } catch (error) {
+                showResult(`❌ API Connection Failed: ${error.message}`, true);
+            }
+        }
+        
+        async function populateSampleData() {
+            try {
+                showResult('🚀 Starting to populate sample data...');
+                
+                const sampleData = {
+                    students: [
+                        { name: "Emma Johnson", color: "blue" },
+                        { name: "Liam Smith", color: "green" },
+                        { name: "Olivia Brown", color: "purple" },
+                        { name: "Noah Davis", color: "orange" },
+                        { name: "Ava Wilson", color: "teal" }
+                    ],
+                    aides: [
+                        { name: "Sarah Thompson", color: "green" },
+                        { name: "Michael Chen", color: "purple" },
+                        { name: "Jennifer Lee", color: "orange" }
+                    ],
+                    activities: [
+                        { title: "Math Tutoring", color: "blue" },
+                        { title: "Reading Support", color: "green" },
+                        { title: "Speech Therapy", color: "purple" },
+                        { title: "Art Therapy", color: "pink" }
+                    ]
+                };
+                
+                // Create students
+                const students = [];
+                for (const student of sampleData.students) {
+                    const created = await apiRequest('POST', '/students', student);
+                    students.push(created);
+                }
+                
+                // Create aides
+                const aides = [];
+                for (const aide of sampleData.aides) {
+                    const created = await apiRequest('POST', '/aides', aide);
+                    aides.push(created);
+                }
+                
+                // Create activities
+                const activities = [];
+                for (const activity of sampleData.activities) {
+                    const created = await apiRequest('POST', '/activities', activity);
+                    activities.push(created);
+                }
+                
+                // Create sample blocks
+                const today = new Date().toISOString().split('T')[0];
+                const blocks = [
+                    {
+                        date: today,
+                        startTime: "09:00",
+                        endTime: "10:00",
+                        activityId: activities[0].id,
+                        studentIds: [students[0].id, students[1].id],
+                        aideIds: [aides[0].id],
+                        notes: "Math tutoring session",
+                        recurrence: '{"type":"none"}'
+                    },
+                    {
+                        date: today,
+                        startTime: "10:30",
+                        endTime: "11:30",
+                        activityId: activities[1].id,
+                        studentIds: [students[2].id],
+                        aideIds: [aides[1].id],
+                        notes: "Reading support",
+                        recurrence: '{"type":"none"}'
+                    }
+                ];
+                
+                for (const block of blocks) {
+                    await apiRequest('POST', '/blocks', block);
+                }
+                
+                showResult(`🎉 Sample data created successfully!<br>
+                    • ${students.length} students<br>
+                    • ${aides.length} aides<br>
+                    • ${activities.length} activities<br>
+                    • ${blocks.length} schedule blocks<br><br>
+                    🌐 <a href="http://localhost:5000" target="_blank">Open AlliBoard Application</a>`);
+                    
+            } catch (error) {
+                showResult(`❌ Error creating sample data: ${error.message}`, true);
+            }
+        }
+        
+        async function cleanupData() {
+            try {
+                showResult('🧹 Starting cleanup...');
+                
+                const [students, aides, activities, blocks, templates] = await Promise.all([
+                    apiRequest('GET', '/students'),
+                    apiRequest('GET', '/aides'),
+                    apiRequest('GET', '/activities'),
+                    apiRequest('GET', '/blocks'),
+                    apiRequest('GET', '/templates')
+                ]);
+                
+                // Delete all data
+                for (const block of blocks) {
+                    await apiRequest('DELETE', `/blocks/${block.id}`);
+                }
+                for (const template of templates) {
+                    await apiRequest('DELETE', `/templates/${template.id}`);
+                }
+                for (const activity of activities) {
+                    await apiRequest('DELETE', `/activities/${activity.id}`);
+                }
+                for (const aide of aides) {
+                    await apiRequest('DELETE', `/aides/${aide.id}`);
+                }
+                for (const student of students) {
+                    await apiRequest('DELETE', `/students/${student.id}`);
+                }
+                
+                showResult(`✅ Cleanup completed! Removed all data.<br>
+                    🌐 <a href="http://localhost:5000" target="_blank">Open AlliBoard Application</a>`);
+                    
+            } catch (error) {
+                showResult(`❌ Error during cleanup: ${error.message}`, true);
+            }
+        }
+        
+        async function viewData() {
+            try {
+                const [students, aides, activities, blocks] = await Promise.all([
+                    apiRequest('GET', '/students'),
+                    apiRequest('GET', '/aides'),
+                    apiRequest('GET', '/activities'),
+                    apiRequest('GET', '/blocks')
+                ]);
+                
+                showResult(`📊 Current Data:<br>
+                    • ${students.length} students<br>
+                    • ${aides.length} aides<br>
+                    • ${activities.length} activities<br>
+                    • ${blocks.length} schedule blocks<br><br>
+                    🌐 <a href="http://localhost:5000" target="_blank">Open AlliBoard Application</a>`);
+                    
+            } catch (error) {
+                showResult(`❌ Error fetching data: ${error.message}`, true);
+            }
+        }
+    </script>
+</body>
+</html>

@@ -300,59 +300,14 @@ export default function Schedule() {
           window.location.reload();
         }} />
 
-        <main className="flex-1 p-6 overflow-auto">
-          <div className="space-y-6">
+        <main className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 flex flex-col overflow-hidden p-6">
             <ScheduleGrid
               selectedDate={selectedDate}
               viewMode={viewMode}
               selectedEntityId={selectedEntityId}
               calendarView={calendarView}
             />
-
-            {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card className="p-4">
-                <div className="flex items-center space-x-3">
-                  <div className="p-2 bg-blue-100 dark:bg-blue-900/20 rounded-lg">
-                    <Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Active Students</p>
-                    <p className="text-2xl font-bold text-foreground" data-testid="stat-active-students">
-                      {activeStudentsToday}
-                    </p>
-                  </div>
-                </div>
-              </Card>
-              
-              <Card className="p-4">
-                <div className="flex items-center space-x-3">
-                  <div className="p-2 bg-orange-100 dark:bg-orange-900/20 rounded-lg">
-                    <UserCheck className="h-5 w-5 text-orange-600 dark:text-orange-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Available Aides</p>
-                    <p className="text-2xl font-bold text-foreground" data-testid="stat-available-aides">
-                      {availableAides}
-                    </p>
-                  </div>
-                </div>
-              </Card>
-              
-              <Card className="p-4">
-                <div className="flex items-center space-x-3">
-                  <div className={`p-2 rounded-lg ${conflictCount > 0 ? 'bg-red-100 dark:bg-red-900/20' : 'bg-green-100 dark:bg-green-900/20'}`}>
-                    <AlertTriangle className={`h-5 w-5 ${conflictCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`} />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Conflicts</p>
-                    <p className="text-2xl font-bold text-foreground" data-testid="stat-conflicts">
-                      {conflictCount}
-                    </p>
-                  </div>
-                </div>
-              </Card>
-            </div>
           </div>
         </main>
       </div>

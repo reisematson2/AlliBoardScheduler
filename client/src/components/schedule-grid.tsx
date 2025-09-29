@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { 
   DndContext, 
@@ -12,6 +12,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // Custom Droppable component for dnd-kit
 interface DroppableProps {
@@ -122,11 +123,14 @@ const getDayNames = (): string[] => {
 const generateImprovedTimeSlots = (startHour: number, endHour: number) => {
   const slots = [];
   for (let hour = startHour; hour <= endHour; hour++) {
+    // Add hour slot
     slots.push({
       time: `${hour.toString().padStart(2, "0")}:00`,
       isHour: true,
       displayTime: formatTimeDisplay(`${hour.toString().padStart(2, "0")}:00`)
     });
+    
+    // Add half-hour slot (except for the last hour)
     if (hour < endHour) {
       slots.push({
         time: `${hour.toString().padStart(2, "0")}:30`,
@@ -138,19 +142,56 @@ const generateImprovedTimeSlots = (startHour: number, endHour: number) => {
   return slots;
 };
 
-// Improved block positioning with precise time calculation
-const getImprovedBlockPosition = (startTime: string, endTime: string, startHour: number = 8) => {
+// Dynamic height calculation based on container size
+const useDynamicHeight = (containerRef: React.RefObject<HTMLDivElement>, startHour: number = 8, endHour: number = 18, dataLoaded: boolean = false) => {
+  const [heightPerHour, setHeightPerHour] = useState(60); // Default fallback
+  
+  const updateHeight = React.useCallback(() => {
+    if (containerRef.current) {
+      const containerHeight = containerRef.current.clientHeight;
+      const totalHours = endHour - startHour;
+      const availableHeight = containerHeight - 100; // Reserve space for header/padding
+      const calculatedHeightPerHour = Math.max(40, availableHeight / totalHours); // Minimum 40px per hour
+      setHeightPerHour(calculatedHeightPerHour);
+    }
+  }, [containerRef, startHour, endHour]);
+  
+  // Use useLayoutEffect for immediate updates
+  React.useLayoutEffect(() => {
+    updateHeight();
+  }, [updateHeight, dataLoaded]);
+  
+  // Also use ResizeObserver for window resize events
+  React.useEffect(() => {
+    const resizeObserver = new ResizeObserver(updateHeight);
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+    
+    // Also listen to window resize as a fallback
+    window.addEventListener('resize', updateHeight);
+    
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, [updateHeight]);
+  
+  return heightPerHour;
+};
+
+// Improved block positioning with dynamic height calculation
+const getImprovedBlockPosition = (startTime: string, endTime: string, heightPerHour: number, startHour: number = 8) => {
   const startMinutes = timeToMinutes(startTime);
   const endMinutes = timeToMinutes(endTime);
   const duration = endMinutes - startMinutes;
   
-  // Each hour = 64px, so each minute = 64/60 px
-  const pixelsPerMinute = 64 / 60;
+  const pixelsPerMinute = heightPerHour / 60;
   
   // Calculate position from start hour (8 AM = 0px)
   const startOffsetMinutes = startMinutes - (startHour * 60);
   const top = Math.max(0, startOffsetMinutes * pixelsPerMinute);
-  const height = Math.max(16, duration * pixelsPerMinute); // Minimum 16px height
+  const height = Math.max(32, duration * pixelsPerMinute);
   
   return {
     top,
@@ -171,7 +212,9 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
   const [newBlockTime, setNewBlockTime] = useState<{ start: string; end: string } | null>(null);
   const [resizingBlock, setResizingBlock] = useState<{ id: string; type: 'top' | 'bottom'; startY: number; originalBlock: Block } | null>(null);
   const [optimisticBlocks, setOptimisticBlocks] = useState<Map<string, Block>>(new Map());
+  const [forceRecalculate, setForceRecalculate] = useState(0);
   const resizeDraftRef = useRef<Block | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   // Calculate dates to fetch based on calendar view
@@ -229,8 +272,28 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
   });
 
   // Use improved time slots with half-hour intervals
-  const timeSlots = generateImprovedTimeSlots(8, 16);
+  const timeSlots = generateImprovedTimeSlots(8, 18);
+  const heightPerHour = useDynamicHeight(containerRef, 8, 18, forceRecalculate);
   const conflicts = detectConflicts(allBlocks, students, aides);
+
+  // Force recalculation when data loads or changes
+  React.useEffect(() => {
+    if (!blocksLoading && allBlocks.length >= 0) {
+      // Small delay to ensure DOM is updated
+      const timer = setTimeout(() => {
+        setForceRecalculate(prev => prev + 1);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [blocksLoading, allBlocks.length]);
+
+  // Also trigger recalculation on mount
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setForceRecalculate(prev => prev + 1);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, []);
 
   const filteredBlocks = useMemo(() => {
     // Merge optimistic updates with server data
@@ -263,8 +326,40 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     return aides.find(a => a.id === aideId);
   };
 
-  const getBlockStyle = (block: Block, columnIndex?: number) => {
-    const position = getImprovedBlockPosition(block.startTime, block.endTime);
+  const groupOverlappingBlocks = (blocks: Block[]) => {
+    const groups: Block[][] = [];
+    const processed = new Set<string>();
+    
+    blocks.forEach(block => {
+      if (processed.has(block.id)) return;
+      
+      const group: Block[] = [block];
+      processed.add(block.id);
+      
+      // Find all blocks that overlap with this one
+      blocks.forEach(otherBlock => {
+        if (processed.has(otherBlock.id)) return;
+        
+        const blockStart = timeToMinutes(block.startTime);
+        const blockEnd = timeToMinutes(block.endTime);
+        const otherStart = timeToMinutes(otherBlock.startTime);
+        const otherEnd = timeToMinutes(otherBlock.endTime);
+        
+        // Check if blocks overlap in time
+        if (blockStart < otherEnd && blockEnd > otherStart) {
+          group.push(otherBlock);
+          processed.add(otherBlock.id);
+        }
+      });
+      
+      groups.push(group);
+    });
+    
+    return groups;
+  };
+
+  const getBlockStyle = (block: Block, columnIndex?: number, blockIndex?: number) => {
+    const position = getImprovedBlockPosition(block.startTime, block.endTime, heightPerHour, 8);
     const activity = getActivity(block.activityId);
     const conflict = conflicts.get(block.id);
     
@@ -293,6 +388,24 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
       }
     }
 
+    // Calculate overlapping blocks for side-by-side layout
+    const overlappingBlocks = filteredBlocks.filter(otherBlock => {
+      if (otherBlock.id === block.id) return false;
+      if (otherBlock.date !== block.date) return false;
+      
+      const blockStart = timeToMinutes(block.startTime);
+      const blockEnd = timeToMinutes(block.endTime);
+      const otherStart = timeToMinutes(otherBlock.startTime);
+      const otherEnd = timeToMinutes(otherBlock.endTime);
+      
+      // Check if blocks overlap in time
+      return (blockStart < otherEnd && blockEnd > otherStart);
+    });
+
+    const totalOverlapping = overlappingBlocks.length + 1; // +1 for current block
+    const blockWidth = 100 / totalOverlapping; // Percentage width
+    const blockLeft = (blockIndex || 0) * blockWidth; // Position within the group
+
     // Week view: blocks are constrained within their column
     // Day view: blocks span the full width with left/right margins
     const baseStyle = {
@@ -315,13 +428,13 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
         },
       };
     } else {
-      // Day view: use the original full-width styling
+      // Day view: use side-by-side layout for overlapping blocks
       return {
         className,
         style: {
           ...baseStyle,
-          left: "8px",
-          right: "8px",
+          left: `${blockLeft}%`,
+          width: `${blockWidth}%`,
           zIndex: 10, // Above droppable areas
         },
       };
@@ -341,6 +454,39 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
       red: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
     };
     return colorMap[color] || "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
+  };
+
+  const getBlockTooltipContent = (block: Block) => {
+    const students = block.studentIds.map(id => getStudent(id)).filter(Boolean);
+    const aides = block.aideIds.map(id => getAide(id)).filter(Boolean);
+    const activity = getActivity(block.activityId);
+    
+    return (
+      <div className="space-y-2">
+        <div className="font-medium">{activity?.title || "Unknown Activity"}</div>
+        <div className="text-sm text-muted-foreground">
+          {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
+        </div>
+        {students.length > 0 && (
+          <div>
+            <div className="text-xs font-medium text-muted-foreground">Students:</div>
+            <div className="text-xs">{students.map(s => s?.name).join(", ")}</div>
+          </div>
+        )}
+        {aides.length > 0 && (
+          <div>
+            <div className="text-xs font-medium text-muted-foreground">Aides:</div>
+            <div className="text-xs">{aides.map(a => a?.name).join(", ")}</div>
+          </div>
+        )}
+        {block.notes && (
+          <div>
+            <div className="text-xs font-medium text-muted-foreground">Notes:</div>
+            <div className="text-xs">{block.notes}</div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const handleBlockClick = (block: Block) => {
@@ -363,6 +509,47 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     handleAddBlock(time);
   };
 
+  const handleEntityDrop = (activeId: string, destinationId: string) => {
+    // Extract entity type and ID from activeId
+    const isStudent = activeId.startsWith('student-');
+    const entityId = activeId.replace(/^(student-|aide-)/, '');
+    
+    // Find the target block
+    const blockId = destinationId.replace('block-', '');
+    const targetBlock = allBlocks.find(block => block.id === blockId);
+    
+    if (!targetBlock) {
+      console.log('Target block not found for ID:', blockId);
+      return;
+    }
+
+    // Update the block with the new entity
+    const updatedBlock = { ...targetBlock };
+    
+    if (isStudent) {
+      // Add student if not already present
+      if (!updatedBlock.studentIds.includes(entityId)) {
+        updatedBlock.studentIds = [...updatedBlock.studentIds, entityId];
+      }
+    } else {
+      // Add aide if not already present
+      if (!updatedBlock.aideIds.includes(entityId)) {
+        updatedBlock.aideIds = [...updatedBlock.aideIds, entityId];
+      }
+    }
+
+    // Update the block
+    updateBlockMutation.mutate({
+      id: blockId,
+      data: updatedBlock,
+    });
+
+    toast({ 
+      title: `${isStudent ? 'Student' : 'Aide'} added to block`,
+      description: `Added to ${getActivity(targetBlock.activityId)?.title || 'activity'}`
+    });
+  };
+
   const onDragEnd = (event: DragEndEvent) => {
     console.log('onDragEnd called with event:', event);
     
@@ -371,17 +558,25 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
       return;
     }
 
-    const blockId = event.active.id as string;
-    const block = allBlocks.find((b: Block) => b.id === blockId);
+    const activeId = event.active.id as string;
+    const destinationId = event.over.id as string;
+
+    // Check if we're dragging a student or aide from the sidebar
+    if (activeId.startsWith('student-') || activeId.startsWith('aide-')) {
+      handleEntityDrop(activeId, destinationId);
+      return;
+    }
+
+    // Otherwise, handle block dragging
+    const block = allBlocks.find((b: Block) => b.id === activeId);
     if (!block) {
-      console.log('Block not found for ID:', blockId);
+      console.log('Block not found for ID:', activeId);
       return;
     }
     
     console.log('Processing drag for block:', block);
 
     // Parse the destination to get the target time and date
-    const destinationId = event.over.id as string;
     let newStartTime: string;
     let newDate: string = block.date; // Default to existing date
 
@@ -442,7 +637,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     
     const handleMouseMove = (e: MouseEvent) => {
       const deltaY = e.clientY - initialY;
-      const pixelsPerHour = 64; // 64px per hour (16px per 15min slot)
+      const pixelsPerHour = heightPerHour; // Use dynamic height calculation
       const minutesDelta = Math.round((deltaY / pixelsPerHour) * 60);
       
       // Snap to 15-minute intervals
@@ -540,7 +735,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
 
   return (
     <>
-      <Card className="flex-1">
+      <Card className="flex-1 flex flex-col overflow-hidden">
         <div className="border-b border-border p-4">
           <div className="flex items-center justify-between">
             <div>
@@ -578,26 +773,42 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
           </div>
         </div>
 
-        <div className="p-4">
+        <div ref={containerRef} className="flex-1 overflow-auto p-4">
           <DndContext 
             onDragEnd={onDragEnd}
             collisionDetection={rectIntersection}
           >
             {calendarView === "week" ? (
               /* Week View Layout */
-              <div className="grid grid-cols-[80px_repeat(7,1fr)] gap-0 min-h-[600px]">
+              <div className="grid grid-cols-[80px_repeat(7,1fr)] gap-0 h-full">
                 {/* Time Column */}
-                <div className="border-r border-border">
-                  {timeSlots.map((timeSlot, index) => (
-                    <div
-                      key={timeSlot.time}
-                      className={`timeline-hour h-16 flex items-center justify-center text-sm text-muted-foreground ${
-                        timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
-                      }`}
-                    >
-                      {timeSlot.displayTime}
-                    </div>
-                  ))}
+                <div className="border-r border-border relative">
+                  {timeSlots.map((timeSlot, index) => {
+                    // Calculate position based on actual time, not index
+                    const timeMinutes = timeToMinutes(timeSlot.time);
+                    const startHour = 8; // 8 AM start
+                    const startOffsetMinutes = timeMinutes - (startHour * 60);
+                    const pixelsPerMinute = heightPerHour / 60;
+                    const topPosition = Math.max(0, startOffsetMinutes * pixelsPerMinute);
+                    
+                    return (
+                      <div
+                        key={timeSlot.time}
+                        className={`timeline-hour flex items-center justify-center text-sm text-muted-foreground ${
+                          timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
+                        }`}
+                        style={{
+                          position: "absolute",
+                          top: `${topPosition}px`,
+                          height: `${heightPerHour / 2}px`, // Half-hour slots
+                          width: "100%",
+                          left: 0,
+                        }}
+                      >
+                        {timeSlot.displayTime}
+                      </div>
+                    );
+                  })}
                 </div>
                 
                 {/* Day Columns */}
@@ -616,60 +827,305 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                       {/* Day Schedule Content */}
                       <div className="relative" style={{ minHeight: "512px" }}>
                         {/* Individual Time Slot Droppables for this day */}
-                        {timeSlots.map((timeSlot, index) => (
-                          <Droppable key={`timeslot-${date}-${index}`} droppableId={`timeslot-${date}-${index}`}>
-                            {(provided: any, snapshot: any) => (
-                              <div
-                                ref={provided.innerRef}
-                                {...provided.droppableProps}
-                                className={`droppable-area h-16 cursor-pointer hover:bg-accent/50 transition-colors ${
-                                  timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
-                                } ${
-                                  snapshot.isDraggingOver ? "bg-primary/10 border-primary" : ""
-                                }`}
-                                onClick={() => handleTimeSlotClick(timeSlot.time)}
-                                style={{ 
-                                  position: "absolute",
-                                  top: `${index * 64}px`,
-                                  left: 0,
-                                  right: 0,
-                                  zIndex: snapshot.isDraggingOver ? 5 : 1,
-                                }}
-                              >
-                                {provided.placeholder}
-                              </div>
-                            )}
-                          </Droppable>
-                        ))}
+                        {timeSlots.map((timeSlot, index) => {
+                          // Calculate position based on actual time, not index
+                          const timeMinutes = timeToMinutes(timeSlot.time);
+                          const startHour = 8; // 8 AM start
+                          const startOffsetMinutes = timeMinutes - (startHour * 60);
+                          const pixelsPerMinute = heightPerHour / 60;
+                          const topPosition = Math.max(0, startOffsetMinutes * pixelsPerMinute);
+                          
+                          return (
+                            <Droppable key={`timeslot-${date}-${index}`} droppableId={`timeslot-${date}-${index}`}>
+                              {(provided: any, snapshot: any) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.droppableProps}
+                                  className={`droppable-area h-16 cursor-pointer hover:bg-accent/50 transition-colors ${
+                                    timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
+                                  } ${
+                                    snapshot.isDraggingOver ? "bg-primary/10 border-primary" : ""
+                                  }`}
+                                  onClick={() => handleTimeSlotClick(timeSlot.time)}
+                                  style={{ 
+                                    position: "absolute",
+                                    top: `${topPosition}px`,
+                                    left: 0,
+                                    right: 0,
+                                    zIndex: snapshot.isDraggingOver ? 5 : 1,
+                                  }}
+                                >
+                                  {provided.placeholder}
+                                </div>
+                              )}
+                            </Droppable>
+                          );
+                        })}
 
                         {/* Schedule Blocks for this day - positioned but not in separate droppable */}
                         <div className="absolute inset-0 pointer-events-none">
-                          {dayBlocks.map((block, index) => {
-                            const blockStyle = getBlockStyle(block, dayIndex);
-                            const activity = getActivity(block.activityId);
-                            const conflict = conflicts.get(block.id);
+                          {groupOverlappingBlocks(dayBlocks).map((group, groupIndex) => 
+                            group.map((block, blockIndex) => {
+                              const blockStyle = getBlockStyle(block, dayIndex, blockIndex);
+                              const activity = getActivity(block.activityId);
+                              const conflict = conflicts.get(block.id);
 
                             return (
-                              <Draggable key={block.id} draggableId={block.id} index={index}>
-                                {(provided: any, snapshot: any) => (
-                                  <div
-                                    ref={provided.innerRef}
-                                    {...provided.draggableProps}
-                                    className={blockStyle.className}
-                                    style={{
-                                      ...provided.draggableProps.style,
-                                      ...blockStyle.style,
-                                      transform: snapshot.isDragging
-                                        ? provided.draggableProps.style?.transform
-                                        : 'none',
-                                      pointerEvents: 'auto',
-                                    }}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleBlockClick(block);
-                                    }}
-                                    data-testid={`block-${block.id}`}
-                                  >
+                              <Draggable key={block.id} draggableId={block.id} index={groupIndex * 100 + blockIndex}>
+                                {(provided: any, snapshot: any) => {
+                                  // Make the block droppable for entities
+                                  const { setNodeRef: setDroppableRef, isOver } = useDroppable({
+                                    id: `block-${block.id}`,
+                                  });
+
+                                  return (
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <div
+                                            ref={(node) => {
+                                              provided.innerRef(node);
+                                              setDroppableRef(node);
+                                            }}
+                                            {...provided.draggableProps}
+                                            className={`${blockStyle.className} ${isOver ? 'ring-2 ring-blue-400 ring-opacity-50' : ''}`}
+                                            style={{
+                                              ...provided.draggableProps.style,
+                                              ...blockStyle.style,
+                                              transform: snapshot.isDragging
+                                                ? provided.draggableProps.style?.transform
+                                                : 'none',
+                                              pointerEvents: 'auto',
+                                            }}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleBlockClick(block);
+                                            }}
+                                            data-testid={`block-${block.id}`}
+                                          >
+                                          {/* Top resize handle */}
+                                          <div
+                                            className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-blue-200/20 transition-colors z-20"
+                                            onMouseDown={(e) => handleResizeStart(block.id, 'top', e)}
+                                            title="Resize from top"
+                                          />
+                                          
+                                          {/* Bottom resize handle */}
+                                          <div
+                                            className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-blue-200/20 transition-colors z-20"
+                                            onMouseDown={(e) => handleResizeStart(block.id, 'bottom', e)}
+                                            title="Resize from bottom"
+                                          />
+                                          
+                                          <div className="flex items-center justify-between mb-1">
+                                            <div
+                                              {...provided.dragHandleProps}
+                                              className="cursor-grab active:cursor-grabbing"
+                                            >
+                                              <GripVertical className="h-3 w-3 text-muted-foreground/50" />
+                                            </div>
+                                            {conflict && (
+                                              <div className="text-xs text-destructive">
+                                                {conflict.type === "aide" ? (
+                                                  <AlertTriangle className="h-3 w-3" />
+                                                ) : (
+                                                  <AlertCircle className="h-3 w-3" />
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                          
+                                          <div className="flex h-full">
+                                            {/* Left side: Activity name and time */}
+                                            <div className="flex flex-col flex-1 min-w-0">
+                                              <div className="text-xs font-medium text-foreground line-clamp-1">
+                                                {activity?.title || "Unknown Activity"}
+                                              </div>
+                                              <div className="text-xs text-muted-foreground">
+                                                {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
+                                              </div>
+                                            </div>
+                                            
+                                            {/* Right side: Names */}
+                                            <div className="flex flex-col gap-1 overflow-hidden ml-2">
+                                              {block.studentIds.slice(0, 4).map(studentId => {
+                                                const student = getStudent(studentId);
+                                                return student ? (
+                                                  <div
+                                                    key={studentId}
+                                                    className={`text-xs px-1 py-0.5 rounded ${getEntityBadgeClass(student.color)} truncate`}
+                                                    data-testid={`student-badge-${student.id}`}
+                                                  >
+                                                    {student.name}
+                                                  </div>
+                                                ) : null;
+                                              })}
+                                              {block.aideIds.slice(0, 2).map(aideId => {
+                                                const aide = getAide(aideId);
+                                                return aide ? (
+                                                  <div
+                                                    key={aideId}
+                                                    className={`text-xs px-1 py-0.5 rounded border ${getEntityBadgeClass(aide.color)} truncate`}
+                                                    data-testid={`aide-badge-${aide.id}`}
+                                                  >
+                                                    {aide.name}
+                                                  </div>
+                                                ) : null;
+                                              })}
+                                              {(block.studentIds.length > 4 || block.aideIds.length > 2) && (
+                                                <div className="text-xs px-1 py-0.5 rounded border text-muted-foreground">
+                                                  +{Math.max(0, block.studentIds.length - 4) + Math.max(0, block.aideIds.length - 2)}
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top" className="max-w-xs">
+                                        {getBlockTooltipContent(block)}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                  );
+                                }}
+                              </Draggable>
+                            );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Day View Layout */
+              <div className="grid grid-cols-[80px_1fr] gap-0 h-full">
+                {/* Time Column */}
+                <div className="border-r border-border relative">
+                  {timeSlots.map((timeSlot, index) => {
+                    // Calculate position based on actual time, not index
+                    const timeMinutes = timeToMinutes(timeSlot.time);
+                    const startHour = 8; // 8 AM start
+                    const startOffsetMinutes = timeMinutes - (startHour * 60);
+                    const pixelsPerMinute = heightPerHour / 60;
+                    const topPosition = Math.max(0, startOffsetMinutes * pixelsPerMinute);
+                    
+                    return (
+                      <div
+                        key={timeSlot.time}
+                        className={`timeline-hour flex items-center justify-center text-sm text-muted-foreground cursor-pointer hover:bg-accent transition-colors ${
+                          timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
+                        }`}
+                        onClick={() => handleTimeSlotClick(timeSlot.time)}
+                        data-testid={`timeslot-${timeSlot.time}`}
+                        style={{
+                          position: "absolute",
+                          top: `${topPosition}px`,
+                          height: `${heightPerHour / 2}px`, // Half-hour slots
+                          width: "100%",
+                          left: 0,
+                        }}
+                      >
+                        {timeSlot.displayTime}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Schedule Content */}
+                <div className="relative" style={{ minHeight: "512px" }}>
+                  {/* Individual Time Slot Droppables */}
+                  {timeSlots.map((timeSlot, index) => {
+                    // Calculate position based on actual time, not index
+                    const timeMinutes = timeToMinutes(timeSlot.time);
+                    const startHour = 8; // 8 AM start
+                    const startOffsetMinutes = timeMinutes - (startHour * 60);
+                    const pixelsPerMinute = heightPerHour / 60;
+                    const topPosition = Math.max(0, startOffsetMinutes * pixelsPerMinute);
+                    
+                    return (
+                      <Droppable key={`timeslot-${index}`} droppableId={`timeslot-${index}`}>
+                        {(provided: any, snapshot: any) => (
+                          <div
+                            ref={provided.innerRef}
+                            {...provided.droppableProps}
+                            className={`droppable-area h-16 cursor-pointer hover:bg-accent/50 transition-colors ${
+                              timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
+                            } ${
+                              snapshot.isDraggingOver ? "bg-primary/10 border-primary" : ""
+                            }`}
+                            onClick={() => handleTimeSlotClick(timeSlot.time)}
+                            style={{ 
+                              position: "absolute",
+                              top: `${topPosition}px`,
+                              left: 0,
+                              right: 0,
+                              zIndex: snapshot.isDraggingOver ? 5 : 1,
+                            }}
+                          >
+                            {provided.placeholder}
+                          </div>
+                        )}
+                      </Droppable>
+                    );
+                  })}
+
+                  {/* Schedule Blocks - positioned but not in separate droppable */}
+                  <div className="absolute inset-0 pointer-events-none">
+                    {groupOverlappingBlocks(filteredBlocks).map((group, groupIndex) => 
+                      group.map((block, blockIndex) => {
+                        const blockStyle = getBlockStyle(block, undefined, blockIndex);
+                        const activity = getActivity(block.activityId);
+                        const conflict = conflicts.get(block.id);
+
+                      return (
+                        <Draggable key={block.id} draggableId={block.id} index={groupIndex * 100 + blockIndex}>
+                          {(provided: any, snapshot: any) => {
+                            // Make the block droppable for entities
+                            const { setNodeRef: setDroppableRef, isOver } = useDroppable({
+                              id: `block-${block.id}`,
+                            });
+
+                            return (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div
+                                      ref={(node) => {
+                                        provided.innerRef(node);
+                                        setDroppableRef(node);
+                                      }}
+                                      {...provided.draggableProps}
+                                      className={`${blockStyle.className} ${isOver ? 'ring-2 ring-blue-400 ring-opacity-50' : ''}`}
+                                      style={{
+                                        ...provided.draggableProps.style,
+                                        ...blockStyle.style,
+                                        transform: snapshot.isDragging
+                                          ? provided.draggableProps.style?.transform
+                                          : 'none',
+                                        pointerEvents: 'auto',
+                                      }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleBlockClick(block);
+                                      }}
+                                      data-testid={`block-${block.id}`}
+                                    >
+                                    {/* Top resize handle */}
+                                    <div
+                                      className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-blue-200/20 transition-colors z-20"
+                                      onMouseDown={(e) => handleResizeStart(block.id, 'top', e)}
+                                      title="Resize from top"
+                                    />
+                                    
+                                    {/* Bottom resize handle */}
+                                    <div
+                                      className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-blue-200/20 transition-colors z-20"
+                                      onMouseDown={(e) => handleResizeStart(block.id, 'bottom', e)}
+                                      title="Resize from bottom"
+                                    />
+                                    
                                     <div className="flex items-center justify-between mb-1">
                                       <div
                                         {...provided.dragHandleProps}
@@ -688,188 +1144,63 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                                       )}
                                     </div>
                                     
-                                    <div className="text-xs font-medium text-foreground mb-1 line-clamp-2">
-                                      {activity?.title || "Unknown Activity"}
-                                    </div>
-                                    
-                                    <div className="text-xs text-muted-foreground mb-2">
-                                      {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
-                                    </div>
-                                    
-                                    <div className="flex flex-wrap gap-1">
-                                      {block.studentIds.map(studentId => {
-                                        const student = getStudent(studentId);
-                                        return student ? (
-                                          <Badge
-                                            key={studentId}
-                                            variant="secondary"
-                                            className={`text-xs px-1 py-0 ${getEntityBadgeClass(student.color)}`}
-                                            data-testid={`student-badge-${student.id}`}
-                                          >
-                                            {student.name}
-                                          </Badge>
-                                        ) : null;
-                                      })}
-                                      {block.aideIds.map(aideId => {
-                                        const aide = getAide(aideId);
-                                        return aide ? (
-                                          <Badge
-                                            key={aideId}
-                                            variant="outline"
-                                            className={`text-xs px-1 py-0 ${getEntityBadgeClass(aide.color)}`}
-                                            data-testid={`aide-badge-${aide.id}`}
-                                          >
-                                            {aide.name}
-                                          </Badge>
-                                        ) : null;
-                                      })}
+                                    <div className="flex h-full">
+                                      {/* Left side: Activity name and time */}
+                                      <div className="flex flex-col flex-1 min-w-0">
+                                        <div className="text-xs font-medium text-foreground line-clamp-1">
+                                          {activity?.title || "Unknown Activity"}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground">
+                                          {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
+                                        </div>
+                                      </div>
+                                      
+                                      {/* Right side: Names */}
+                                      <div className="flex flex-col gap-1 overflow-hidden ml-2">
+                                        {block.studentIds.slice(0, 4).map(studentId => {
+                                          const student = getStudent(studentId);
+                                          return student ? (
+                                            <div
+                                              key={studentId}
+                                              className={`text-xs px-1 py-0.5 rounded ${getEntityBadgeClass(student.color)} truncate`}
+                                              data-testid={`student-badge-${student.id}`}
+                                            >
+                                              {student.name}
+                                            </div>
+                                          ) : null;
+                                        })}
+                                        {block.aideIds.slice(0, 2).map(aideId => {
+                                          const aide = getAide(aideId);
+                                          return aide ? (
+                                            <div
+                                              key={aideId}
+                                              className={`text-xs px-1 py-0.5 rounded border ${getEntityBadgeClass(aide.color)} truncate`}
+                                              data-testid={`aide-badge-${aide.id}`}
+                                            >
+                                              {aide.name}
+                                            </div>
+                                          ) : null;
+                                        })}
+                                        {(block.studentIds.length > 4 || block.aideIds.length > 2) && (
+                                          <div className="text-xs px-1 py-0.5 rounded border text-muted-foreground">
+                                            +{Math.max(0, block.studentIds.length - 4) + Math.max(0, block.aideIds.length - 2)}
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
-                                )}
-                              </Draggable>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-xs">
+                                  {getBlockTooltipContent(block)}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                             );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              /* Day View Layout */
-              <div className="grid grid-cols-[80px_1fr] gap-0 min-h-[600px]">
-                {/* Time Column */}
-                <div className="border-r border-border">
-                  {timeSlots.map((timeSlot, index) => (
-                    <div
-                      key={timeSlot.time}
-                      className={`timeline-hour h-16 flex items-center justify-center text-sm text-muted-foreground cursor-pointer hover:bg-accent transition-colors ${
-                        timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
-                      }`}
-                      onClick={() => handleTimeSlotClick(timeSlot.time)}
-                      data-testid={`timeslot-${timeSlot.time}`}
-                    >
-                      {timeSlot.displayTime}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Schedule Content */}
-                <div className="relative" style={{ minHeight: "512px" }}>
-                  {/* Individual Time Slot Droppables */}
-                  {timeSlots.map((timeSlot, index) => (
-                    <Droppable key={`timeslot-${index}`} droppableId={`timeslot-${index}`}>
-                      {(provided: any, snapshot: any) => (
-                        <div
-                          ref={provided.innerRef}
-                          {...provided.droppableProps}
-                          className={`droppable-area h-16 cursor-pointer hover:bg-accent/50 transition-colors ${
-                            timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
-                          } ${
-                            snapshot.isDraggingOver ? "bg-primary/10 border-primary" : ""
-                          }`}
-                          onClick={() => handleTimeSlotClick(timeSlot.time)}
-                          style={{ 
-                            position: "absolute",
-                            top: `${index * 64}px`,
-                            left: 0,
-                            right: 0,
-                            zIndex: snapshot.isDraggingOver ? 5 : 1,
                           }}
-                        >
-                          {provided.placeholder}
-                        </div>
-                      )}
-                    </Droppable>
-                  ))}
-
-                  {/* Schedule Blocks - positioned but not in separate droppable */}
-                  <div className="absolute inset-0 pointer-events-none">
-                    {filteredBlocks.map((block, index) => {
-                      const blockStyle = getBlockStyle(block);
-                      const activity = getActivity(block.activityId);
-                      const conflict = conflicts.get(block.id);
-
-                      return (
-                        <Draggable key={block.id} draggableId={block.id} index={index}>
-                          {(provided: any, snapshot: any) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              className={blockStyle.className}
-                              style={{
-                                ...provided.draggableProps.style,
-                                ...blockStyle.style,
-                                transform: snapshot.isDragging
-                                  ? provided.draggableProps.style?.transform
-                                  : 'none',
-                                pointerEvents: 'auto',
-                              }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleBlockClick(block);
-                              }}
-                              data-testid={`block-${block.id}`}
-                            >
-                              <div className="flex items-center justify-between mb-1">
-                                <div
-                                  {...provided.dragHandleProps}
-                                  className="cursor-grab active:cursor-grabbing"
-                                >
-                                  <GripVertical className="h-3 w-3 text-muted-foreground/50" />
-                                </div>
-                                {conflict && (
-                                  <div className="text-xs text-destructive">
-                                    {conflict.type === "aide" ? (
-                                      <AlertTriangle className="h-3 w-3" />
-                                    ) : (
-                                      <AlertCircle className="h-3 w-3" />
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                              
-                              <div className="text-xs font-medium text-foreground mb-1 line-clamp-2">
-                                {activity?.title || "Unknown Activity"}
-                              </div>
-                              
-                              <div className="text-xs text-muted-foreground mb-2">
-                                {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
-                              </div>
-                              
-                              <div className="flex flex-wrap gap-1">
-                                {block.studentIds.map(studentId => {
-                                  const student = getStudent(studentId);
-                                  return student ? (
-                                    <Badge
-                                      key={studentId}
-                                      variant="secondary"
-                                      className={`text-xs px-1 py-0 ${getEntityBadgeClass(student.color)}`}
-                                      data-testid={`student-badge-${student.id}`}
-                                    >
-                                      {student.name}
-                                    </Badge>
-                                  ) : null;
-                                })}
-                                {block.aideIds.map(aideId => {
-                                  const aide = getAide(aideId);
-                                  return aide ? (
-                                    <Badge
-                                      key={aideId}
-                                      variant="outline"
-                                      className={`text-xs px-1 py-0 ${getEntityBadgeClass(aide.color)}`}
-                                      data-testid={`aide-badge-${aide.id}`}
-                                    >
-                                      {aide.name}
-                                    </Badge>
-                                  ) : null;
-                                })}
-                              </div>
-                            </div>
-                          )}
                         </Draggable>
                       );
-                    })}
+                      })
+                    )}
                   </div>
                 </div>
               </div>

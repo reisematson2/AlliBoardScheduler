@@ -9,6 +9,7 @@ import {
 import { randomUUID } from "crypto";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
+import { MemoryStorage } from "./memory-storage";
 
 export interface IStorage {
   // Students
@@ -137,7 +138,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createBlock(insertBlock: InsertBlock): Promise<Block> {
-    const [block] = await db.insert(blocks).values(insertBlock).returning();
+    const blockData = {
+      ...insertBlock,
+      studentIds: (insertBlock.studentIds || []) as string[],
+      aideIds: (insertBlock.aideIds || []) as string[]
+    };
+    const [block] = await db.insert(blocks).values(blockData).returning();
     return block;
   }
 
@@ -147,12 +153,12 @@ export class DatabaseStorage implements IStorage {
       
       try {
         for (const date of dates) {
-          const blockForDate: InsertBlock = {
+          const blockForDate = {
             startTime: blockData.startTime,
             endTime: blockData.endTime,
             activityId: blockData.activityId,
-            studentIds: blockData.studentIds || [],
-            aideIds: blockData.aideIds || [],
+            studentIds: (blockData.studentIds || []) as string[],
+            aideIds: (blockData.aideIds || []) as string[],
             notes: blockData.notes,
             recurrence: blockData.recurrence,
             date,
@@ -172,7 +178,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateBlock(id: string, updateData: Partial<InsertBlock>): Promise<Block | undefined> {
-    const [updated] = await db.update(blocks).set(updateData).where(eq(blocks.id, id)).returning();
+    const cleanUpdateData: any = { ...updateData };
+    if (updateData.studentIds !== undefined) {
+      cleanUpdateData.studentIds = updateData.studentIds as string[];
+    }
+    if (updateData.aideIds !== undefined) {
+      cleanUpdateData.aideIds = updateData.aideIds as string[];
+    }
+    const [updated] = await db.update(blocks).set(cleanUpdateData).where(eq(blocks.id, id)).returning();
     return updated || undefined;
   }
 
@@ -202,4 +215,25 @@ export class DatabaseStorage implements IStorage {
   }
 }
 
-export const storage = new DatabaseStorage();
+// Use memory storage for development when DATABASE_URL is not available
+let storage: IStorage;
+
+// Initialize storage
+function initializeStorage(): IStorage {
+  try {
+    if (process.env.DATABASE_URL && process.env.DATABASE_URL !== "postgresql://user:password@localhost:5432/alliboard") {
+      console.log("Using database storage with DATABASE_URL");
+      return new DatabaseStorage();
+    } else {
+      console.log("No valid DATABASE_URL found, using in-memory storage for development");
+      return new MemoryStorage();
+    }
+  } catch (error) {
+    console.log("Database connection failed, falling back to in-memory storage:", error);
+    return new MemoryStorage();
+  }
+}
+
+storage = initializeStorage();
+
+export { storage };

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useDraggable } from "@dnd-kit/core";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Edit, Trash2, Users, UserCheck, ClipboardList } from "lucide-react";
+import { Plus, Edit, Trash2, Users, UserCheck, ClipboardList, GripVertical } from "lucide-react";
 import { Student, Aide, Activity } from "@shared/schema";
 import { EntityModal } from "./entity-modal";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -10,6 +11,128 @@ import { useToast } from "@/hooks/use-toast";
 
 interface SidebarProps {
   onEntityUpdate?: () => void;
+}
+
+// Draggable Student Component
+function DraggableStudent({ student, onEdit, onDelete }: { 
+  student: Student; 
+  onEdit: (student: Student, type: "student") => void;
+  onDelete: (id: string, type: "student") => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `student-${student.id}`,
+    data: {
+      type: 'student',
+      entity: student,
+    },
+  });
+
+  const style = transform ? {
+    transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+  } : undefined;
+
+  return (
+    <Card
+      ref={setNodeRef}
+      style={style}
+      className={`p-3 ${getEntityColorClasses(student.color)} ${isDragging ? 'opacity-50' : ''}`}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <div
+            {...listeners}
+            {...attributes}
+            className="cursor-grab active:cursor-grabbing"
+          >
+            <GripVertical className="h-3 w-3 text-muted-foreground/50" />
+          </div>
+          <div className={`w-3 h-3 rounded-full ${getColorDot(student.color)}`} />
+          <span className="font-medium text-sm" data-testid={`student-name-${student.id}`}>
+            {student.name}
+          </span>
+        </div>
+        <div className="flex space-x-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onEdit(student, "student")}
+            data-testid={`button-edit-student-${student.id}`}
+          >
+            <Edit className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onDelete(student.id, "student")}
+            data-testid={`button-delete-student-${student.id}`}
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// Draggable Aide Component
+function DraggableAide({ aide, onEdit, onDelete }: { 
+  aide: Aide; 
+  onEdit: (aide: Aide, type: "aide") => void;
+  onDelete: (id: string, type: "aide") => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `aide-${aide.id}`,
+    data: {
+      type: 'aide',
+      entity: aide,
+    },
+  });
+
+  const style = transform ? {
+    transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+  } : undefined;
+
+  return (
+    <Card
+      ref={setNodeRef}
+      style={style}
+      className={`p-3 ${getEntityColorClasses(aide.color)} ${isDragging ? 'opacity-50' : ''}`}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <div
+            {...listeners}
+            {...attributes}
+            className="cursor-grab active:cursor-grabbing"
+          >
+            <GripVertical className="h-3 w-3 text-muted-foreground/50" />
+          </div>
+          <div className={`w-3 h-3 rounded-full ${getColorDot(aide.color)}`} />
+          <span className="font-medium text-sm" data-testid={`aide-name-${aide.id}`}>
+            {aide.name}
+          </span>
+        </div>
+        <div className="flex space-x-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onEdit(aide, "aide")}
+            data-testid={`button-edit-aide-${aide.id}`}
+          >
+            <Edit className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onDelete(aide.id, "aide")}
+            data-testid={`button-delete-aide-${aide.id}`}
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
 }
 
 export function Sidebar({ onEntityUpdate }: SidebarProps) {
@@ -170,37 +293,12 @@ export function Sidebar({ onEntityUpdate }: SidebarProps) {
                 </Card>
               ) : (
                 students.map((student) => (
-                  <Card
+                  <DraggableStudent
                     key={student.id}
-                    className={`p-3 ${getEntityColorClasses(student.color)}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-3 h-3 rounded-full ${getColorDot(student.color)}`} />
-                        <span className="font-medium text-sm" data-testid={`student-name-${student.id}`}>
-                          {student.name}
-                        </span>
-                      </div>
-                      <div className="flex space-x-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEdit(student, "student")}
-                          data-testid={`button-edit-student-${student.id}`}
-                        >
-                          <Edit className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDelete(student.id, "student")}
-                          data-testid={`button-delete-student-${student.id}`}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  </Card>
+                    student={student}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                  />
                 ))
               )}
             </div>
@@ -238,37 +336,12 @@ export function Sidebar({ onEntityUpdate }: SidebarProps) {
                 </Card>
               ) : (
                 aides.map((aide) => (
-                  <Card
+                  <DraggableAide
                     key={aide.id}
-                    className={`p-3 ${getEntityColorClasses(aide.color)}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-3 h-3 rounded-full ${getColorDot(aide.color)}`} />
-                        <span className="font-medium text-sm" data-testid={`aide-name-${aide.id}`}>
-                          {aide.name}
-                        </span>
-                      </div>
-                      <div className="flex space-x-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEdit(aide, "aide")}
-                          data-testid={`button-edit-aide-${aide.id}`}
-                        >
-                          <Edit className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDelete(aide.id, "aide")}
-                          data-testid={`button-delete-aide-${aide.id}`}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  </Card>
+                    aide={aide}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                  />
                 ))
               )}
             </div>
