@@ -8,6 +8,231 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { ChevronDown, ChevronUp, Users, Clock, MoreVertical, Edit, Trash2, Copy } from "lucide-react";
+
+// Enhanced Participant Display Component
+interface ParticipantDisplayProps {
+  block: Block;
+  getStudent: (id: string) => any;
+  getAide: (id: string) => any;
+  getEntityBadgeClass: (color: string) => string;
+  blockHeight: number;
+}
+
+function ParticipantDisplay({ block, getStudent, getAide, getEntityBadgeClass, blockHeight }: ParticipantDisplayProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  // Get all participants (students first, then aides)
+  const allParticipants = [
+    ...block.studentIds.map(id => ({ id, type: 'student' as const, entity: getStudent(id) })),
+    ...block.aideIds.map(id => ({ id, type: 'aide' as const, entity: getAide(id) }))
+  ].filter(item => item.entity);
+
+  // Calculate how many participants can fit based on block height
+  // Use a more responsive approach that scales with block size
+  const reservedSpace = Math.max(32, blockHeight * 0.4); // Reserve 40% of block height or 32px minimum
+  const participantHeight = Math.max(16, blockHeight * 0.15); // Each participant takes 15% of block height or 16px minimum
+  const maxVisibleParticipants = Math.max(1, Math.floor((blockHeight - reservedSpace) / participantHeight));
+  
+  const visibleParticipants = isExpanded ? allParticipants : allParticipants.slice(0, maxVisibleParticipants);
+  const remainingCount = allParticipants.length - maxVisibleParticipants;
+
+  if (allParticipants.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="relative flex-1 ml-1 max-h-full overflow-hidden">
+      {/* Participants list */}
+      <div className="flex flex-col gap-0.5 pr-6">
+        {visibleParticipants.map(({ id, type, entity }) => (
+          <div
+            key={id}
+            className={`text-xs px-1 py-0.5 rounded ${
+              type === 'aide' ? 'border border-orange-200' : ''
+            }${getEntityBadgeClass(entity.color)} truncate leading-tight`}
+            data-testid={`${type}-badge-${entity.id}`}
+            title={entity.name} // Add tooltip for truncated names
+          >
+            {entity.name}
+          </div>
+        ))}
+      </div>
+      
+      {/* Expand/Collapse and overflow indicators */}
+      {allParticipants.length > maxVisibleParticipants && (
+        <div className="absolute bottom-1 right-1 flex items-center gap-1">
+          {!isExpanded && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-4 w-4 p-0 text-xs hover:bg-muted/70"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsExpanded(true);
+              }}
+              title={`Show all ${allParticipants.length} participants`}
+            >
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          )}
+          {isExpanded && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-4 w-4 p-0 text-xs hover:bg-muted/70"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsExpanded(false);
+              }}
+              title="Show fewer participants"
+            >
+              <ChevronUp className="h-3 w-3" />
+            </Button>
+          )}
+          {!isExpanded && remainingCount > 0 && (
+            <div className="text-xs px-1 py-0.5 rounded text-muted-foreground bg-muted/50 leading-tight">
+              +{remainingCount}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Current Time Indicator Component
+interface CurrentTimeIndicatorProps {
+  heightPerHour: number;
+  startHour?: number;
+}
+
+function CurrentTimeIndicator({ heightPerHour, startHour = 8 }: CurrentTimeIndicatorProps) {
+  const [currentTime, setCurrentTime] = useState(new Date());
+  
+  // Update current time every minute
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 60000); // Update every minute
+    
+    return () => clearInterval(interval);
+  }, []);
+  
+  // Calculate position based on current time
+  const currentHour = currentTime.getHours();
+  const currentMinute = currentTime.getMinutes();
+  const currentTimeInMinutes = currentHour * 60 + currentMinute;
+  const startTimeInMinutes = startHour * 60;
+  
+  // Only show if current time is within the visible range
+  if (currentTimeInMinutes < startTimeInMinutes || currentTimeInMinutes > (startHour + 10) * 60) {
+    return null;
+  }
+  
+  const pixelsPerMinute = heightPerHour / 60;
+  const topPosition = (currentTimeInMinutes - startTimeInMinutes) * pixelsPerMinute;
+  
+  return (
+    <div
+      className="absolute left-0 right-0 z-20 pointer-events-none"
+      style={{ top: `${topPosition}px` }}
+    >
+      {/* Current time line */}
+      <div className="h-0.5 bg-red-500 shadow-sm relative">
+        {/* Time label */}
+        <div className="absolute -left-16 -top-2 bg-red-500 text-white text-xs px-1 py-0.5 rounded flex items-center gap-1">
+          <Clock className="h-3 w-3" />
+          {currentTime.toLocaleTimeString('en-US', { 
+            hour: 'numeric', 
+            minute: '2-digit',
+            hour12: true 
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Entity Schedule Summary Component
+interface EntityScheduleSummaryProps {
+  entityId: string | null;
+  entityType: 'student' | 'aide' | null;
+  blocks: Block[];
+  getStudent: (id: string) => any;
+  getAide: (id: string) => any;
+  getActivity: (id: string) => any;
+  formatTimeDisplay: (time: string) => string;
+  onClose: () => void;
+}
+
+function EntityScheduleSummary({ 
+  entityId, 
+  entityType, 
+  blocks, 
+  getStudent, 
+  getAide, 
+  getActivity, 
+  formatTimeDisplay, 
+  onClose 
+}: EntityScheduleSummaryProps) {
+  if (!entityId || !entityType) return null;
+
+  const entity = entityType === 'student' ? getStudent(entityId) : getAide(entityId);
+  if (!entity) return null;
+
+  // Filter blocks for this entity
+  const entityBlocks = blocks.filter(block => {
+    if (entityType === 'student') {
+      return block.studentIds.includes(entityId);
+    } else {
+      return block.aideIds.includes(entityId);
+    }
+  }).sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+
+  return (
+    <div className="absolute top-4 right-4 bg-card border border-border rounded-lg shadow-lg p-4 max-w-sm z-30">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className={`w-3 h-3 rounded-full ${
+            entityType === 'student' ? 'bg-blue-500' : 'bg-orange-500'
+          }`} />
+          <h3 className="font-semibold text-sm">{entity.name}</h3>
+          <span className="text-xs text-muted-foreground capitalize">({entityType})</span>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 w-6 p-0"
+          onClick={onClose}
+        >
+          ×
+        </Button>
+      </div>
+      
+      <div className="space-y-2 max-h-64 overflow-y-auto">
+        {entityBlocks.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No scheduled activities</p>
+        ) : (
+          entityBlocks.map(block => {
+            const activity = getActivity(block.activityId);
+            return (
+              <div key={block.id} className="flex items-center gap-2 p-2 bg-muted/50 rounded text-xs">
+                <div className="flex-1">
+                  <div className="font-medium">{activity?.title || "Unknown Activity"}</div>
+                  <div className="text-muted-foreground">
+                    {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
 
 // Custom Droppable component for dnd-kit
 interface DroppableProps {
@@ -87,6 +312,9 @@ interface DroppableBlockProps {
   getEntityBadgeClass: (color: string) => string;
   getBlockTooltipContent: (block: Block) => React.ReactNode;
   formatTimeDisplay: (time: string) => string;
+  onBlockEdit?: (block: Block) => void;
+  onBlockDelete?: (block: Block) => void;
+  onBlockCopy?: (block: Block) => void;
 }
 
 function DroppableBlock({ 
@@ -100,29 +328,38 @@ function DroppableBlock({
   getAide,
   getEntityBadgeClass,
   getBlockTooltipContent,
-  formatTimeDisplay
+  formatTimeDisplay,
+  onBlockEdit,
+  onBlockDelete,
+  onBlockCopy
 }: DroppableBlockProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: `block-${block.id}`,
   });
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div
-            ref={setNodeRef}
-            className={`${blockStyle.className} ${isOver ? 'ring-2 ring-blue-400 ring-opacity-50' : ''}`}
-            style={{
-              ...blockStyle.style,
-              pointerEvents: 'auto',
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              onBlockClick(block);
-            }}
-            data-testid={`block-${block.id}`}
-          >
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div
+                ref={setNodeRef}
+                className={`${blockStyle.className} ${isOver ? 'ring-2 ring-blue-400 ring-opacity-50' : ''}`}
+                style={{
+                  ...blockStyle.style,
+                  pointerEvents: 'auto',
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onBlockClick(block);
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  onBlockEdit?.(block);
+                }}
+                data-testid={`block-${block.id}`}
+              >
             {/* Top resize handle */}
             <div
               className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-blue-200/20 transition-colors z-20"
@@ -137,99 +374,60 @@ function DroppableBlock({
               title="Resize from bottom"
             />
             
-            <div className="flex items-center justify-between mb-1">
-              {conflict && (
-                <div className="text-xs text-destructive">
-                  {conflict.type === "aide" ? (
-                    <AlertTriangle className="h-3 w-3" />
-                  ) : (
-                    <AlertCircle className="h-3 w-3" />
-                  )}
-                </div>
-              )}
-            </div>
+            {conflict && (
+              <div className="absolute top-1 right-1 text-xs text-destructive z-10">
+                {conflict.type === "aide" ? (
+                  <AlertTriangle className="h-3 w-3" />
+                ) : (
+                  <AlertCircle className="h-3 w-3" />
+                )}
+              </div>
+            )}
             
             <div className="flex h-full">
               {/* Left side: Activity name and time */}
-              <div className="flex flex-col flex-1 min-w-0">
-                <div className="text-xs font-medium text-foreground line-clamp-1">
-                  {activity?.title || "Unknown Activity"}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
-                </div>
-              </div>
-              
-              {/* Right side: Names and overflow indicator */}
-              <div className="relative flex-1 ml-1 max-h-full overflow-hidden">
+              <div className="flex flex-1 min-w-0">
                 {(() => {
-                  // Calculate how many names we can fit based on block duration
-                  const durationMinutes = timeToMinutes(block.endTime) - timeToMinutes(block.startTime);
+                  // Check if block height is sufficient for vertical layout
+                  const blockHeight = parseFloat(blockStyle.style.height);
+                  const hasVerticalSpace = blockHeight >= 40; // Need at least 40px for vertical layout
                   
-                  // Estimate how many names can fit based on block duration
-                  // Longer blocks can fit more names
-                  let maxNames = 2; // Default minimum
-                  if (durationMinutes >= 60) maxNames = 4; // 1+ hour blocks
-                  else if (durationMinutes >= 45) maxNames = 3; // 45+ minute blocks
-                  else if (durationMinutes >= 30) maxNames = 2; // 30+ minute blocks
-                  
-                  // Get all names (students first, then aides)
-                  const allNames = [
-                    ...block.studentIds.map(id => ({ id, type: 'student', entity: getStudent(id) })),
-                    ...block.aideIds.map(id => ({ id, type: 'aide', entity: getAide(id) }))
-                  ].filter(item => item.entity);
-                  
-                  // Calculate how many names we can actually display
-                  let namesToShow = Math.min(maxNames, allNames.length);
-                  
-                  // If we have space, try to fit more names by checking actual text length
-                  if (namesToShow < allNames.length) {
-                    const totalTextLength = allNames.slice(0, namesToShow).reduce((sum, item) => 
-                      sum + (item.entity?.name?.length || 0), 0
-                    );
-                    const avgTextLength = totalTextLength / namesToShow;
-                    
-                    // If names are short, we might be able to fit more
-                    if (avgTextLength < 10 && namesToShow < allNames.length) {
-                      namesToShow = Math.min(namesToShow + 1, allNames.length);
-                    }
-                    
-                    // For very short names, try to fit even more
-                    if (avgTextLength < 6 && namesToShow < allNames.length) {
-                      namesToShow = Math.min(namesToShow + 1, allNames.length);
-                    }
-                  }
-                  
-                  const visibleNames = allNames.slice(0, namesToShow);
-                  const remainingCount = allNames.length - namesToShow;
-                  
-                  return (
-                    <>
-                      {/* Names list */}
-                      <div className="flex flex-col gap-0.5 pr-6">
-                        {visibleNames.map(({ id, type, entity }) => (
-                          <div
-                            key={id}
-                            className={`text-xs px-1 py-0.5 rounded ${
-                              type === 'aide' ? 'border ' : ''
-                            }${getEntityBadgeClass(entity.color)} truncate leading-tight`}
-                            data-testid={`${type}-badge-${entity.id}`}
-                          >
-                            {entity.name}
-                          </div>
-                        ))}
-                      </div>
-                      
-                      {/* Overflow indicator in bottom right corner */}
-                      {remainingCount > 0 && (
-                        <div className="absolute bottom-1 right-1 text-xs px-1 py-0.5 rounded text-muted-foreground bg-muted/50 leading-tight">
-                          +{remainingCount}
+                  if (hasVerticalSpace) {
+                    // Vertical layout: name on top, time below
+                    return (
+                      <div className="flex flex-col flex-1 min-w-0">
+                        <div className="text-xs font-medium text-foreground line-clamp-1">
+                          {activity?.title || "Unknown Activity"}
                         </div>
-                      )}
-                    </>
-                  );
+                        <div className="text-xs text-muted-foreground">
+                          {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
+                        </div>
+                      </div>
+                    );
+                  } else {
+                    // Horizontal layout: name and time on same line
+                    return (
+                      <div className="flex items-center gap-1 flex-1 min-w-0">
+                        <div className="text-xs font-medium text-foreground line-clamp-1">
+                          {activity?.title || "Unknown Activity"}
+                        </div>
+                        <div className="text-xs text-muted-foreground whitespace-nowrap">
+                          {formatTimeDisplay(block.startTime)}-{formatTimeDisplay(block.endTime)}
+                        </div>
+                      </div>
+                    );
+                  }
                 })()}
               </div>
+              
+              {/* Right side: Enhanced participant display */}
+              <ParticipantDisplay
+                block={block}
+                getStudent={getStudent}
+                getAide={getAide}
+                getEntityBadgeClass={getEntityBadgeClass}
+                blockHeight={blockStyle.style.height}
+              />
             </div>
           </div>
         </TooltipTrigger>
@@ -238,6 +436,25 @@ function DroppableBlock({
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => onBlockEdit?.(block)}>
+          <Edit className="mr-2 h-4 w-4" />
+          Edit Block
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => onBlockCopy?.(block)}>
+          <Copy className="mr-2 h-4 w-4" />
+          Copy Block
+        </ContextMenuItem>
+        <ContextMenuItem 
+          onClick={() => onBlockDelete?.(block)}
+          className="text-destructive focus:text-destructive"
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Delete Block
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 import { 
@@ -285,7 +502,7 @@ const getDayNames = (): string[] => {
   return ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 };
 
-// Improved time grid generation with half-hour intervals
+// Improved time grid generation with 15-minute intervals
 const generateImprovedTimeSlots = (startHour: number, endHour: number) => {
   const slots = [];
   for (let hour = startHour; hour <= endHour; hour++) {
@@ -293,14 +510,32 @@ const generateImprovedTimeSlots = (startHour: number, endHour: number) => {
     slots.push({
       time: `${hour.toString().padStart(2, "0")}:00`,
       isHour: true,
+      isQuarter: false,
       displayTime: formatTimeDisplay(`${hour.toString().padStart(2, "0")}:00`)
     });
     
-    // Add half-hour slot (except for the last hour)
+    // Add 15-minute slot
+    slots.push({
+      time: `${hour.toString().padStart(2, "0")}:15`,
+      isHour: false,
+      isQuarter: true,
+      displayTime: ""
+    });
+    
+    // Add 30-minute slot
+    slots.push({
+      time: `${hour.toString().padStart(2, "0")}:30`,
+      isHour: false,
+      isQuarter: false,
+      displayTime: ""
+    });
+    
+    // Add 45-minute slot (except for the last hour)
     if (hour < endHour) {
       slots.push({
-        time: `${hour.toString().padStart(2, "0")}:30`,
+        time: `${hour.toString().padStart(2, "0")}:45`,
         isHour: false,
+        isQuarter: true,
         displayTime: ""
       });
     }
@@ -346,7 +581,7 @@ const useDynamicHeight = (containerRef: React.RefObject<HTMLDivElement>, startHo
   return heightPerHour;
 };
 
-// Improved block positioning with dynamic height calculation
+// Responsive block positioning with proportional height calculation
 const getImprovedBlockPosition = (startTime: string, endTime: string, heightPerHour: number, startHour: number = 8) => {
   const startMinutes = timeToMinutes(startTime);
   const endMinutes = timeToMinutes(endTime);
@@ -356,12 +591,20 @@ const getImprovedBlockPosition = (startTime: string, endTime: string, heightPerH
   
   // Calculate position from start hour (8 AM = 0px)
   const startOffsetMinutes = startMinutes - (startHour * 60);
-  const top = Math.max(0, startOffsetMinutes * pixelsPerMinute) - 3; // Move up 3px to align with grid lines
-  const height = Math.max(32, duration * pixelsPerMinute);
+  const top = Math.max(0, startOffsetMinutes * pixelsPerMinute);
+  
+  // Calculate height based purely on duration - no artificial minimums
+  // This ensures true proportional representation regardless of viewport size
+  const height = duration * pixelsPerMinute;
+  
+  // Only apply a minimum height for very short blocks (less than 5 minutes) to ensure usability
+  // This minimum scales with the viewport size
+  const absoluteMinHeight = Math.max(12, heightPerHour * 0.05); // 3% of hour height, minimum 12px
+  const finalHeight = duration < 5 ? Math.max(absoluteMinHeight, height) : height;
   
   return {
     top,
-    height
+    height: finalHeight
   };
 };
 
@@ -370,9 +613,12 @@ interface ScheduleGridProps {
   viewMode: "master" | "student" | "aide";
   selectedEntityId?: string;
   calendarView: "day" | "week";
+  onEntityHighlight?: (entityId: string, entityType: 'student' | 'aide') => void;
+  highlightedEntityId?: string | null;
+  highlightedEntityType?: 'student' | 'aide' | null;
 }
 
-export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calendarView }: ScheduleGridProps) {
+export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calendarView, onEntityHighlight, highlightedEntityId, highlightedEntityType }: ScheduleGridProps) {
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [selectedBlock, setSelectedBlock] = useState<Block | null>(null);
   const [newBlockTime, setNewBlockTime] = useState<{ start: string; end: string } | null>(null);
@@ -471,6 +717,37 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     return () => clearTimeout(timer);
   }, []);
 
+  // Keyboard shortcuts
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle shortcuts when not in an input field
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      // Ctrl/Cmd + N: Add new block
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        handleAddBlock();
+      }
+      
+      // Escape: Clear highlighting
+      if (e.key === 'Escape') {
+        clearHighlight();
+      }
+      
+      // Delete: Delete selected block (if any)
+      if (e.key === 'Delete' && selectedBlock) {
+        e.preventDefault();
+        handleBlockDelete(selectedBlock);
+        setSelectedBlock(null);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedBlock]);
+
   const filteredBlocks = useMemo(() => {
     // Merge optimistic updates with server data
     const mergedBlocks = allBlocks.map(block => 
@@ -517,6 +794,23 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     return aides.find(a => a.id === aideId);
   };
 
+  // Entity highlighting functions
+  const clearHighlight = () => {
+    onEntityHighlight?.('', 'student'); // This will clear the highlight
+  };
+
+  const isBlockHighlighted = (block: Block) => {
+    if (!highlightedEntityId || !highlightedEntityType) return false;
+    
+    if (highlightedEntityType === 'student') {
+      return block.studentIds.includes(highlightedEntityId);
+    } else if (highlightedEntityType === 'aide') {
+      return block.aideIds.includes(highlightedEntityId);
+    }
+    
+    return false;
+  };
+
   const groupOverlappingBlocks = (blocks: Block[]) => {
     const groups: Block[][] = [];
     const processed = new Set<string>();
@@ -554,31 +848,6 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     const activity = getActivity(block.activityId);
     const conflict = conflicts.get(block.id);
     
-    let className = "schedule-block absolute rounded-md p-2 m-1 cursor-pointer shadow-sm border-l-4 ";
-    
-    if (activity) {
-      const colorMap: Record<string, string> = {
-        blue: "bg-blue-100 border-blue-500 dark:bg-blue-900/30",
-        green: "bg-green-100 border-green-500 dark:bg-green-900/30", 
-        purple: "bg-purple-100 border-purple-500 dark:bg-purple-900/30",
-        orange: "bg-orange-100 border-orange-500 dark:bg-orange-900/30",
-        teal: "bg-teal-100 border-teal-500 dark:bg-teal-900/30",
-        indigo: "bg-indigo-100 border-indigo-500 dark:bg-indigo-900/30",
-        pink: "bg-pink-100 border-pink-500 dark:bg-pink-900/30",
-        yellow: "bg-yellow-100 border-yellow-500 dark:bg-yellow-900/30",
-        red: "bg-red-100 border-red-500 dark:bg-red-900/30",
-      };
-      className += colorMap[activity.color] || "bg-gray-100 border-gray-500 dark:bg-gray-900/30";
-    }
-    
-    if (conflict) {
-      if (conflict.type === "aide") {
-        className += " conflict-aide";
-      } else {
-        className += " conflict-student";
-      }
-    }
-
     // Calculate overlapping blocks for side-by-side layout
     // Use the provided blocks for the date, or fall back to filteredBlocks
     const blocksToCheck = allBlocksForDate || filteredBlocks;
@@ -599,12 +868,66 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     const blockWidth = 100 / totalOverlapping; // Percentage width
     const blockLeft = (blockIndex || 0) * blockWidth; // Position within the group
 
+    // Enhanced visual separation for concurrent activities
+    let className = "schedule-block absolute rounded-md p-2 cursor-pointer shadow-sm border-l-4 ";
+    
+    // Add visual separation between concurrent blocks
+    if (totalOverlapping > 1) {
+      className += "border-r border-border/30 "; // Add right border for separation
+      if (blockIndex === 0) {
+        className += "ml-1 "; // First block gets left margin
+      } else {
+        className += "ml-0.5 "; // Subsequent blocks get smaller margin
+      }
+      if (blockIndex === totalOverlapping - 1) {
+        className += "mr-1 "; // Last block gets right margin
+      } else {
+        className += "mr-0.5 "; // Other blocks get smaller margin
+      }
+    } else {
+      className += "mx-1 my-0.5 "; // Single blocks get horizontal margin and small vertical margin
+    }
+    
+    if (activity) {
+      const colorMap: Record<string, string> = {
+        blue: "bg-blue-100 border-blue-500 dark:bg-blue-900/30",
+        green: "bg-green-100 border-green-500 dark:bg-green-900/30", 
+        purple: "bg-purple-100 border-purple-500 dark:bg-purple-900/30",
+        orange: "bg-orange-100 border-orange-500 dark:bg-orange-900/30",
+        teal: "bg-teal-100 border-teal-500 dark:bg-teal-900/30",
+        indigo: "bg-indigo-100 border-indigo-500 dark:bg-indigo-900/30",
+        pink: "bg-pink-100 border-pink-500 dark:bg-pink-900/30",
+        yellow: "bg-yellow-100 border-yellow-500 dark:bg-yellow-900/30",
+        red: "bg-red-100 border-red-500 dark:bg-red-900/30",
+      };
+      className += colorMap[activity.color] || "bg-gray-100 border-gray-500 dark:bg-gray-900/30";
+      
+      // Add subtle background alternation for better lane distinction
+      if (totalOverlapping > 1 && blockIndex !== undefined) {
+        if (blockIndex % 2 === 1) {
+          className += " bg-opacity-80 "; // Alternate opacity for visual separation
+        }
+      }
+    }
+    
+    if (conflict) {
+      if (conflict.type === "aide") {
+        className += " conflict-aide";
+      } else {
+        className += " conflict-student";
+      }
+    }
+
+    // Add highlighting styles
+    if (isBlockHighlighted(block)) {
+      className += " ring-2 ring-blue-400 ring-opacity-60 shadow-lg ";
+    }
+
     // Week view: blocks are constrained within their column
     // Day view: blocks span the full width with left/right margins
     const baseStyle = {
       top: `${position.top}px`,
       height: `${position.height}px`,
-      minHeight: "48px",
       zIndex: 10,
     };
 
@@ -654,29 +977,57 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     const students = block.studentIds.map(id => getStudent(id)).filter(Boolean);
     const aides = block.aideIds.map(id => getAide(id)).filter(Boolean);
     const activity = getActivity(block.activityId);
+    const totalParticipants = students.length + aides.length;
     
     return (
-      <div className="space-y-2">
-        <div className="font-medium">{activity?.title || "Unknown Activity"}</div>
-        <div className="text-sm text-muted-foreground">
+      <div className="space-y-3 max-w-xs">
+        <div className="font-semibold text-base">{activity?.title || "Unknown Activity"}</div>
+        <div className="text-sm text-muted-foreground flex items-center gap-2">
+          <Clock className="h-3 w-3" />
           {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
         </div>
+        
+        <div className="flex items-center gap-2 text-sm">
+          <Users className="h-4 w-4 text-muted-foreground" />
+          <span className="font-medium">{totalParticipants} participant{totalParticipants !== 1 ? 's' : ''}</span>
+        </div>
+        
         {students.length > 0 && (
           <div>
-            <div className="text-xs font-medium text-muted-foreground">Students:</div>
-            <div className="text-xs">{students.map(s => s?.name).join(", ")}</div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">
+              Students ({students.length}):
+            </div>
+            <div className="text-xs space-y-1">
+              {students.map(s => (
+                <div key={s?.id} className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${getEntityBadgeClass(s?.color || 'gray').split(' ')[0]}`} />
+                  {s?.name}
+                </div>
+              ))}
+            </div>
           </div>
         )}
+        
         {aides.length > 0 && (
           <div>
-            <div className="text-xs font-medium text-muted-foreground">Aides:</div>
-            <div className="text-xs">{aides.map(a => a?.name).join(", ")}</div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">
+              Aides ({aides.length}):
+            </div>
+            <div className="text-xs space-y-1">
+              {aides.map(a => (
+                <div key={a?.id} className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${getEntityBadgeClass(a?.color || 'gray').split(' ')[0]}`} />
+                  {a?.name}
+                </div>
+              ))}
+            </div>
           </div>
         )}
+        
         {block.notes && (
           <div>
-            <div className="text-xs font-medium text-muted-foreground">Notes:</div>
-            <div className="text-xs">{block.notes}</div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">Notes:</div>
+            <div className="text-xs bg-muted/50 p-2 rounded">{block.notes}</div>
           </div>
         )}
       </div>
@@ -701,6 +1052,42 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
 
   const handleTimeSlotClick = (time: string) => {
     handleAddBlock(time);
+  };
+
+  // Enhanced block interaction handlers
+  const handleBlockEdit = (block: Block) => {
+    setSelectedBlock(block);
+    setNewBlockTime(null);
+    setBlockModalOpen(true);
+  };
+
+  const handleBlockDelete = async (block: Block) => {
+    if (!confirm(`Are you sure you want to delete this block: ${getActivity(block.activityId)?.title || 'Unknown Activity'}?`)) {
+      return;
+    }
+
+    try {
+      await apiRequest("DELETE", `/api/blocks/${block.id}`);
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+      toast({ title: "Block deleted successfully" });
+    } catch (error) {
+      toast({ title: "Failed to delete block", variant: "destructive" });
+    }
+  };
+
+  const handleBlockCopy = (block: Block) => {
+    // Create a new block with the same data but different ID and time
+    const newBlock = {
+      ...block,
+      id: '', // Will be generated by server
+      startTime: block.startTime,
+      endTime: block.endTime,
+      date: selectedDate,
+    };
+    
+    setSelectedBlock(newBlock);
+    setNewBlockTime({ start: block.startTime, end: block.endTime });
+    setBlockModalOpen(true);
   };
 
 
@@ -841,6 +1228,14 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
               </p>
             </div>
             <div className="flex items-center space-x-3">
+              <div className="text-xs text-muted-foreground">
+                <span className="hidden sm:inline">Keyboard shortcuts: </span>
+                <kbd className="px-1 py-0.5 bg-muted rounded text-xs">Ctrl+N</kbd> Add Block
+                <span className="mx-2">•</span>
+                <kbd className="px-1 py-0.5 bg-muted rounded text-xs">Esc</kbd> Clear Highlight
+                <span className="mx-2">•</span>
+                <kbd className="px-1 py-0.5 bg-muted rounded text-xs">Del</kbd> Delete Block
+              </div>
               <Button 
                 onClick={() => handleAddBlock()}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
@@ -853,7 +1248,19 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
           </div>
         </div>
 
-        <div ref={containerRef} className="flex-1 overflow-auto p-4">
+        <div ref={containerRef} className="flex-1 overflow-auto p-4 relative">
+          {/* Entity Schedule Summary */}
+          <EntityScheduleSummary
+            entityId={highlightedEntityId || null}
+            entityType={highlightedEntityType || null}
+            blocks={filteredBlocks}
+            getStudent={getStudent}
+            getAide={getAide}
+            getActivity={getActivity}
+            formatTimeDisplay={formatTimeDisplay}
+            onClose={clearHighlight}
+          />
+          
             {calendarView === "week" ? (
               /* Week View Layout */
               <div className="grid grid-cols-[80px_repeat(5,1fr)] gap-0 h-full">
@@ -875,13 +1282,17 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                     return (
                       <div
                         key={timeSlot.time}
-                        className={`timeline-hour flex items-center justify-center text-sm text-muted-foreground ${
-                          timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
+                        className={`timeline-hour flex items-center justify-center ${
+                          timeSlot.isHour 
+                            ? 'text-sm font-semibold text-foreground border-t-2 border-border bg-muted/20' 
+                            : timeSlot.isQuarter
+                            ? 'text-xs text-muted-foreground border-t border-dotted border-border/30'
+                            : 'text-xs text-muted-foreground border-t border-dashed border-border/40'
                         }`}
                         style={{
                           position: "absolute",
                           top: `${topPosition}px`,
-                          height: `${heightPerHour / 2}px`, // Half-hour slots
+                          height: `${heightPerHour / 4}px`, // 15-minute slots
                           width: "100%",
                           left: 0,
                         }}
@@ -920,6 +1331,11 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                       
                       {/* Day Schedule Content */}
                       <div className="relative" style={{ minHeight: "512px" }}>
+                        {/* Current time indicator for today */}
+                        {date === getCurrentDate() && (
+                          <CurrentTimeIndicator heightPerHour={heightPerHour} startHour={8} />
+                        )}
+                        
                         {/* Individual Time Slot Droppables for this day */}
                         {timeSlots.map((timeSlot, index) => {
                           // Calculate position based on actual time, not index
@@ -979,6 +1395,9 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                                 getEntityBadgeClass={getEntityBadgeClass}
                                 getBlockTooltipContent={getBlockTooltipContent}
                                 formatTimeDisplay={formatTimeDisplay}
+                                onBlockEdit={handleBlockEdit}
+                                onBlockDelete={handleBlockDelete}
+                                onBlockCopy={handleBlockCopy}
                               />
                             );
                             })
@@ -1005,15 +1424,19 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                     return (
                       <div
                         key={timeSlot.time}
-                        className={`timeline-hour flex items-center justify-center text-sm text-muted-foreground cursor-pointer hover:bg-accent transition-colors ${
-                          timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
+                        className={`timeline-hour flex items-center justify-center cursor-pointer hover:bg-accent transition-colors ${
+                          timeSlot.isHour 
+                            ? 'text-sm font-semibold text-foreground border-t-2 border-border bg-muted/20' 
+                            : timeSlot.isQuarter
+                            ? 'text-xs text-muted-foreground border-t border-dotted border-border/30'
+                            : 'text-xs text-muted-foreground border-t border-dashed border-border/40'
                         }`}
                         onClick={() => handleTimeSlotClick(timeSlot.time)}
                         data-testid={`timeslot-${timeSlot.time}`}
                         style={{
                           position: "absolute",
                           top: `${topPosition}px`,
-                          height: `${heightPerHour / 2}px`, // Half-hour slots
+                          height: `${heightPerHour / 4}px`, // 15-minute slots
                           width: "100%",
                           left: 0,
                         }}
@@ -1026,6 +1449,9 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
 
                 {/* Schedule Content */}
                 <div className="relative" style={{ minHeight: "512px" }}>
+                  {/* Current time indicator */}
+                  <CurrentTimeIndicator heightPerHour={heightPerHour} startHour={8} />
+                  
                   {/* Individual Time Slot Droppables */}
                   {timeSlots.map((timeSlot, index) => {
                     // Calculate position based on actual time, not index
@@ -1085,6 +1511,9 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                           getEntityBadgeClass={getEntityBadgeClass}
                           getBlockTooltipContent={getBlockTooltipContent}
                           formatTimeDisplay={formatTimeDisplay}
+                          onBlockEdit={handleBlockEdit}
+                          onBlockDelete={handleBlockDelete}
+                          onBlockCopy={handleBlockCopy}
                         />
                       );
                       })

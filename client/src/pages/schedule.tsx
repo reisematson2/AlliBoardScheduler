@@ -56,6 +56,8 @@ export default function Schedule() {
   const [templateName, setTemplateName] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [highlightedEntityId, setHighlightedEntityId] = useState<string | null>(null);
+  const [highlightedEntityType, setHighlightedEntityType] = useState<'student' | 'aide' | null>(null);
   const { toast } = useToast();
 
   // Navigation functions
@@ -282,6 +284,18 @@ export default function Schedule() {
 
   const handleEntitySelect = (entityId: string) => {
     setSelectedEntityId(entityId);
+  };
+
+  const handleEntityHighlight = (entityId: string, entityType: 'student' | 'aide') => {
+    if (highlightedEntityId === entityId && highlightedEntityType === entityType) {
+      // If clicking the same entity, clear highlight
+      setHighlightedEntityId(null);
+      setHighlightedEntityType(null);
+    } else {
+      // Highlight the new entity
+      setHighlightedEntityId(entityId);
+      setHighlightedEntityType(entityType);
+    }
   };
 
   const handleSaveTemplate = () => {
@@ -547,10 +561,15 @@ export default function Schedule() {
         collisionDetection={closestCenter}
       >
         <div className="flex h-screen">
-          <Sidebar onEntityUpdate={() => {
-            // Force refresh to update schedule when entities change
-            window.location.reload();
-          }} />
+          <Sidebar 
+            onEntityUpdate={() => {
+              // Force refresh to update schedule when entities change
+              window.location.reload();
+            }}
+            onEntityHighlight={handleEntityHighlight}
+            highlightedEntityId={highlightedEntityId}
+            highlightedEntityType={highlightedEntityType}
+          />
 
           <main className="flex-1 flex flex-col overflow-hidden">
             <div className="flex-1 flex flex-col overflow-hidden p-6">
@@ -559,6 +578,9 @@ export default function Schedule() {
                 viewMode={viewMode}
                 selectedEntityId={selectedEntityId}
                 calendarView={calendarView}
+                onEntityHighlight={handleEntityHighlight}
+                highlightedEntityId={highlightedEntityId}
+                highlightedEntityType={highlightedEntityType}
               />
             </div>
           </main>

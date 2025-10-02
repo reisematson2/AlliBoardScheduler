@@ -11,6 +11,9 @@ import { useToast } from "@/hooks/use-toast";
 
 interface SidebarProps {
   onEntityUpdate?: () => void;
+  onEntityHighlight?: (entityId: string, entityType: 'student' | 'aide') => void;
+  highlightedEntityId?: string | null;
+  highlightedEntityType?: 'student' | 'aide' | null;
 }
 
 // Color utility functions
@@ -45,10 +48,12 @@ const getColorDot = (color: string) => {
 };
 
 // Draggable Student Component
-function DraggableStudent({ student, onEdit, onDelete }: { 
+function DraggableStudent({ student, onEdit, onDelete, onHighlight, isHighlighted }: { 
   student: Student; 
   onEdit: (student: Student, type: "student") => void;
   onDelete: (id: string, type: "student") => void;
+  onHighlight?: (entityId: string, entityType: 'student' | 'aide') => void;
+  isHighlighted?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `student-${student.id}`,
@@ -66,7 +71,10 @@ function DraggableStudent({ student, onEdit, onDelete }: {
     <Card
       ref={setNodeRef}
       style={style}
-      className={`p-3 ${getEntityColorClasses(student.color)} ${isDragging ? 'opacity-50' : ''}`}
+      className={`p-3 ${getEntityColorClasses(student.color)} ${isDragging ? 'opacity-50' : ''} ${
+        isHighlighted ? 'ring-2 ring-blue-400 ring-opacity-60 shadow-lg' : ''
+      } cursor-pointer`}
+      onClick={() => onHighlight?.(student.id, 'student')}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
@@ -106,10 +114,12 @@ function DraggableStudent({ student, onEdit, onDelete }: {
 }
 
 // Draggable Aide Component
-function DraggableAide({ aide, onEdit, onDelete }: { 
+function DraggableAide({ aide, onEdit, onDelete, onHighlight, isHighlighted }: { 
   aide: Aide; 
   onEdit: (aide: Aide, type: "aide") => void;
   onDelete: (id: string, type: "aide") => void;
+  onHighlight?: (entityId: string, entityType: 'student' | 'aide') => void;
+  isHighlighted?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `aide-${aide.id}`,
@@ -127,7 +137,10 @@ function DraggableAide({ aide, onEdit, onDelete }: {
     <Card
       ref={setNodeRef}
       style={style}
-      className={`p-3 ${getEntityColorClasses(aide.color)} ${isDragging ? 'opacity-50' : ''}`}
+      className={`p-3 ${getEntityColorClasses(aide.color)} ${isDragging ? 'opacity-50' : ''} ${
+        isHighlighted ? 'ring-2 ring-blue-400 ring-opacity-60 shadow-lg' : ''
+      } cursor-pointer`}
+      onClick={() => onHighlight?.(aide.id, 'aide')}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
@@ -166,7 +179,7 @@ function DraggableAide({ aide, onEdit, onDelete }: {
   );
 }
 
-export function Sidebar({ onEntityUpdate }: SidebarProps) {
+export function Sidebar({ onEntityUpdate, onEntityHighlight, highlightedEntityId, highlightedEntityType }: SidebarProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState<"student" | "aide" | "activity">("student");
   const [editingEntity, setEditingEntity] = useState<Student | Aide | Activity | null>(null);
@@ -299,6 +312,8 @@ export function Sidebar({ onEntityUpdate }: SidebarProps) {
                     student={student}
                     onEdit={handleEdit}
                     onDelete={handleDelete}
+                    onHighlight={onEntityHighlight}
+                    isHighlighted={highlightedEntityId === student.id && highlightedEntityType === 'student'}
                   />
                 ))
               )}
@@ -342,6 +357,8 @@ export function Sidebar({ onEntityUpdate }: SidebarProps) {
                     aide={aide}
                     onEdit={handleEdit}
                     onDelete={handleDelete}
+                    onHighlight={onEntityHighlight}
+                    isHighlighted={highlightedEntityId === aide.id && highlightedEntityType === 'aide'}
                   />
                 ))
               )}
