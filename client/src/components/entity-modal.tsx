@@ -18,13 +18,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { ColorPicker } from "@/components/ui/color-picker";
 import { Student, Aide, Activity, insertStudentSchema, insertAideSchema, insertActivitySchema } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -36,17 +30,30 @@ interface EntityModalProps {
   entity?: Student | Aide | Activity | null;
 }
 
-const colorOptions = [
-  { value: "blue", label: "Blue" },
-  { value: "green", label: "Green" },
-  { value: "purple", label: "Purple" },
-  { value: "orange", label: "Orange" },
-  { value: "teal", label: "Teal" },
-  { value: "indigo", label: "Indigo" },
-  { value: "pink", label: "Pink" },
-  { value: "yellow", label: "Yellow" },
-  { value: "red", label: "Red" },
-];
+// Color mapping for backward compatibility
+const colorNameToHex: Record<string, string> = {
+  blue: "#3B82F6",
+  green: "#10B981", 
+  purple: "#8B5CF6",
+  orange: "#F59E0B",
+  teal: "#14B8A6",
+  indigo: "#6366F1",
+  pink: "#EC4899",
+  yellow: "#EAB308",
+  red: "#EF4444",
+};
+
+const hexToColorName: Record<string, string> = {
+  "#3B82F6": "blue",
+  "#10B981": "green",
+  "#8B5CF6": "purple", 
+  "#F59E0B": "orange",
+  "#14B8A6": "teal",
+  "#6366F1": "indigo",
+  "#EC4899": "pink",
+  "#EAB308": "yellow",
+  "#EF4444": "red",
+};
 
 export function EntityModal({ open, onClose, type, entity }: EntityModalProps) {
   const { toast } = useToast();
@@ -68,28 +75,31 @@ export function EntityModal({ open, onClose, type, entity }: EntityModalProps) {
     defaultValues: {
       name: "",
       title: "",
-      color: "blue",
+      color: "#3B82F6", // Default to blue hex
     },
   });
 
   useEffect(() => {
     if (entity) {
+      // Convert named color to hex if needed
+      const colorValue = entity.color.startsWith('#') ? entity.color : colorNameToHex[entity.color] || "#3B82F6";
+      
       if (type === "activity") {
         form.reset({
           title: (entity as Activity).title,
-          color: entity.color,
+          color: colorValue,
         });
       } else {
         form.reset({
           name: (entity as Student | Aide).name,
-          color: entity.color,
+          color: colorValue,
         });
       }
     } else {
       form.reset({
         name: "",
         title: "",
-        color: "blue",
+        color: "#3B82F6",
       });
     }
   }, [entity, form, type]);
@@ -103,10 +113,19 @@ export function EntityModal({ open, onClose, type, entity }: EntityModalProps) {
     }
   };
 
+  const convertColorForSubmission = (color: string) => {
+    // Convert hex color back to named color for backward compatibility
+    return hexToColorName[color] || color;
+  };
+
   const createMutation = useMutation({
     mutationFn: (data: any) => {
       const endpoint = `/api/${getPlural(type)}`;
-      return apiRequest("POST", endpoint, data);
+      const processedData = {
+        ...data,
+        color: convertColorForSubmission(data.color)
+      };
+      return apiRequest("POST", endpoint, processedData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/${getPlural(type)}`] });
@@ -121,7 +140,11 @@ export function EntityModal({ open, onClose, type, entity }: EntityModalProps) {
   const updateMutation = useMutation({
     mutationFn: (data: any) => {
       const endpoint = `/api/${getPlural(type)}/${entity!.id}`;
-      return apiRequest("PUT", endpoint, data);
+      const processedData = {
+        ...data,
+        color: convertColorForSubmission(data.color)
+      };
+      return apiRequest("PUT", endpoint, processedData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/${getPlural(type)}`] });
@@ -187,25 +210,12 @@ export function EntityModal({ open, onClose, type, entity }: EntityModalProps) {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Color</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger data-testid={`select-${type}-color`}>
-                        <SelectValue placeholder="Select a color" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {colorOptions.map((color) => (
-                        <SelectItem key={color.value} value={color.value}>
-                          <div className="flex items-center space-x-2">
-                            <div
-                              className={`w-3 h-3 rounded-full bg-${color.value}-500`}
-                            />
-                            <span>{color.label}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormControl>
+                    <ColorPicker
+                      value={field.value || "#3B82F6"}
+                      onChange={field.onChange}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}

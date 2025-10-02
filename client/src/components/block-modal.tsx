@@ -28,11 +28,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Block, Student, Aide, Activity, insertBlockSchema } from "@shared/schema";
+import { z } from "zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeDisplay } from "@/lib/time-utils";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ColorPicker } from "@/components/ui/color-picker";
+import { getTextColorClass, getMutedTextColorClass } from "@/lib/color-utils";
 import { CalendarIcon, ChevronUp, ChevronDown } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -91,13 +94,21 @@ export function BlockModal({
     queryKey: ["/api/aides"],
   });
 
+  // Extended schema to include customActivityName, customActivityColor, and selectedDate
+  const extendedBlockSchema = insertBlockSchema.extend({
+    customActivityName: z.string().optional(),
+    customActivityColor: z.string().optional(),
+    selectedDate: z.date().optional(),
+  });
+
   const form = useForm({
-    resolver: zodResolver(insertBlockSchema),
+    resolver: zodResolver(extendedBlockSchema),
     defaultValues: {
       startTime: initialStartTime || "09:00",
       endTime: initialEndTime || "10:00",
       activityId: "",
       customActivityName: "",
+      customActivityColor: "#3B82F6", // Default blue color
       studentIds: [] as string[],
       aideIds: [] as string[],
       notes: "",
@@ -107,15 +118,35 @@ export function BlockModal({
     },
   });
 
+  // Watch the customActivityName field to force re-renders
+  const customActivityName = form.watch("customActivityName");
+
   useEffect(() => {
     if (block) {
       const isCustomActivity = block.activityId.startsWith('custom:');
+      
+      let customName = "";
+      let customColor = "#3B82F6";
+      
+      if (isCustomActivity) {
+        const customData = block.activityId.replace('custom:', '');
+        if (customData.includes('|')) {
+          // New format: custom:ActivityName|#color
+          const [name, color] = customData.split('|');
+          customName = name;
+          customColor = color || "#3B82F6";
+        } else {
+          // Old format: custom:ActivityName (for backward compatibility)
+          customName = customData;
+        }
+      }
       
       form.reset({
         startTime: block.startTime,
         endTime: block.endTime,
         activityId: isCustomActivity ? "" : block.activityId,
-        customActivityName: isCustomActivity ? block.activityId.replace('custom:', '') : "",
+        customActivityName: customName,
+        customActivityColor: customColor,
         studentIds: block.studentIds,
         aideIds: block.aideIds,
         notes: block.notes || "",
@@ -131,6 +162,7 @@ export function BlockModal({
         endTime: initialEndTime || "10:00",
         activityId: "",
         customActivityName: "",
+        customActivityColor: "#3B82F6",
         studentIds: [],
         aideIds: [],
         notes: "",
@@ -193,12 +225,14 @@ export function BlockModal({
   });
 
   const onSubmit = (data: any) => {
-    // Handle custom activity name
+    // Handle custom activity name and color
     if (useCustomActivity && data.customActivityName) {
-      // For custom activities, we'll store the name in the activityId field
-      // and create a temporary activity object for display purposes
-      data.activityId = `custom:${data.customActivityName}`;
+      // For custom activities, we'll store the name and color in the activityId field
+      // Format: custom:ActivityName|#color
+      const color = data.customActivityColor || "#3B82F6";
+      data.activityId = `custom:${data.customActivityName}|${color}`;
       delete data.customActivityName;
+      delete data.customActivityColor;
     } else if (!useCustomActivity && !data.activityId) {
       // If using prebuilt activities but none selected, show error
       toast({ title: "Please select an activity or enter a custom name", variant: "destructive" });
@@ -251,6 +285,11 @@ export function BlockModal({
   };
 
   const getEntityColor = (color: string) => {
+    // Handle hex colors
+    if (color.startsWith('#')) {
+      return "bg-opacity-20 text-gray-800 dark:text-gray-200";
+    }
+    
     const colorMap: Record<string, string> = {
       blue: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
       green: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
@@ -266,6 +305,11 @@ export function BlockModal({
   };
 
   const getColorDot = (color: string) => {
+    // Handle hex colors
+    if (color.startsWith('#')) {
+      return "";
+    }
+    
     const colorMap: Record<string, string> = {
       blue: "bg-blue-500",
       green: "bg-green-500",
@@ -304,6 +348,8 @@ export function BlockModal({
                   onClick={() => {
                     setUseCustomActivity(false);
                     form.setValue("customActivityName", "");
+                    form.setValue("customActivityColor", "#3B82F6");
+                    form.clearErrors("customActivityName");
                   }}
                 >
                   Quick Select
@@ -315,6 +361,9 @@ export function BlockModal({
                   onClick={() => {
                     setUseCustomActivity(true);
                     form.setValue("activityId", "");
+                    form.setValue("customActivityName", "");
+                    form.setValue("customActivityColor", "#3B82F6");
+                    form.clearErrors("activityId");
                   }}
                 >
                   Custom Name
@@ -337,7 +386,10 @@ export function BlockModal({
                           {activities.map((activity) => (
                             <SelectItem key={activity.id} value={activity.id}>
                               <div className="flex items-center space-x-2">
-                                <div className={`w-3 h-3 rounded-full ${getColorDot(activity.color)}`} />
+                                <div 
+                                  className={`w-3 h-3 rounded-full ${getColorDot(activity.color)}`}
+                                  style={activity.color.startsWith('#') ? { backgroundColor: activity.color } : {}}
+                                />
                                 <span>{activity.title}</span>
                               </div>
                             </SelectItem>
@@ -349,22 +401,47 @@ export function BlockModal({
                   )}
                 />
               ) : (
-                <FormField
-                  control={form.control}
-                  name="customActivityName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <Input
-                          placeholder="Enter custom activity name"
-                          {...field}
-                          data-testid="input-custom-activity"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="customActivityName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Custom Activity Name</FormLabel>
+                        <FormControl>
+                          <Input
+                            key={`custom-activity-${useCustomActivity}`}
+                            placeholder="Enter custom activity name"
+                            value={customActivityName || ""}
+                            onChange={(e) => field.onChange(e.target.value)}
+                            onBlur={field.onBlur}
+                            name={field.name}
+                            ref={field.ref}
+                            data-testid="input-custom-activity"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={form.control}
+                    name="customActivityColor"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Activity Color</FormLabel>
+                        <FormControl>
+                          <ColorPicker
+                            value={field.value || "#3B82F6"}
+                            onChange={field.onChange}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               )}
             </div>
 
@@ -530,7 +607,10 @@ export function BlockModal({
                               data-testid={`checkbox-student-${student.id}`}
                             />
                             <div className="flex items-center space-x-2">
-                              <div className={`w-3 h-3 rounded-full ${getColorDot(student.color)}`} />
+                              <div 
+                                className={`w-3 h-3 rounded-full ${getColorDot(student.color)}`}
+                                style={student.color.startsWith('#') ? { backgroundColor: student.color } : {}}
+                              />
                               <span className="text-sm">{student.name}</span>
                             </div>
                           </div>
@@ -565,7 +645,10 @@ export function BlockModal({
                               data-testid={`checkbox-aide-${aide.id}`}
                             />
                             <div className="flex items-center space-x-2">
-                              <div className={`w-3 h-3 rounded-full ${getColorDot(aide.color)}`} />
+                              <div 
+                                className={`w-3 h-3 rounded-full ${getColorDot(aide.color)}`}
+                                style={aide.color.startsWith('#') ? { backgroundColor: aide.color } : {}}
+                              />
                               <span className="text-sm">{aide.name}</span>
                             </div>
                           </div>

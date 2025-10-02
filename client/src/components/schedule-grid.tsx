@@ -18,9 +18,10 @@ interface ParticipantDisplayProps {
   getAide: (id: string) => any;
   getEntityBadgeClass: (color: string) => string;
   blockHeight: number;
+  activityColor?: string;
 }
 
-function ParticipantDisplay({ block, getStudent, getAide, getEntityBadgeClass, blockHeight }: ParticipantDisplayProps) {
+function ParticipantDisplay({ block, getStudent, getAide, getEntityBadgeClass, blockHeight, activityColor }: ParticipantDisplayProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   
   // Get all participants (students first, then aides)
@@ -51,7 +52,7 @@ function ParticipantDisplay({ block, getStudent, getAide, getEntityBadgeClass, b
             key={id}
             className={`text-xs px-1 py-0.5 rounded ${
               type === 'aide' ? 'border border-orange-200' : ''
-            }${getEntityBadgeClass(entity.color)} truncate leading-tight`}
+            }${getEntityBadgeClass(entity.color)} truncate leading-tight ${getTextColorClass(entity.color)}`}
             data-testid={`${type}-badge-${entity.id}`}
             title={entity.name} // Add tooltip for truncated names
           >
@@ -92,7 +93,7 @@ function ParticipantDisplay({ block, getStudent, getAide, getEntityBadgeClass, b
             </Button>
           )}
           {!isExpanded && remainingCount > 0 && (
-            <div className="text-xs px-1 py-0.5 rounded text-muted-foreground bg-muted/50 leading-tight">
+            <div className={`text-xs px-1 py-0.5 rounded bg-muted/50 leading-tight ${getMutedTextColorClass(activityColor || 'blue')}`}>
               +{remainingCount}
             </div>
           )}
@@ -396,10 +397,10 @@ function DroppableBlock({
                     // Vertical layout: name on top, time below
                     return (
                       <div className="flex flex-col flex-1 min-w-0">
-                        <div className="text-xs font-medium text-foreground line-clamp-1">
+                        <div className={`text-xs font-medium line-clamp-1 ${getTextColorClass(activity?.color || 'blue')}`}>
                           {activity?.title || "Unknown Activity"}
                         </div>
-                        <div className="text-xs text-muted-foreground">
+                        <div className={`text-xs ${getMutedTextColorClass(activity?.color || 'blue')}`}>
                           {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
                         </div>
                       </div>
@@ -408,10 +409,10 @@ function DroppableBlock({
                     // Horizontal layout: name and time on same line
                     return (
                       <div className="flex items-center gap-1 flex-1 min-w-0">
-                        <div className="text-xs font-medium text-foreground line-clamp-1">
+                        <div className={`text-xs font-medium line-clamp-1 ${getTextColorClass(activity?.color || 'blue')}`}>
                           {activity?.title || "Unknown Activity"}
                         </div>
-                        <div className="text-xs text-muted-foreground whitespace-nowrap">
+                        <div className={`text-xs whitespace-nowrap ${getMutedTextColorClass(activity?.color || 'blue')}`}>
                           {formatTimeDisplay(block.startTime)}-{formatTimeDisplay(block.endTime)}
                         </div>
                       </div>
@@ -427,6 +428,7 @@ function DroppableBlock({
                 getAide={getAide}
                 getEntityBadgeClass={getEntityBadgeClass}
                 blockHeight={blockStyle.style.height}
+                activityColor={activity?.color}
               />
             </div>
           </div>
@@ -474,6 +476,7 @@ import {
   timeToMinutes,
   getCurrentDate
 } from "@/lib/time-utils";
+import { getTextColorClass, getMutedTextColorClass } from "@/lib/color-utils";
 import { detectConflicts } from "@/lib/conflicts";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation } from "@tanstack/react-query";
@@ -581,7 +584,7 @@ const useDynamicHeight = (containerRef: React.RefObject<HTMLDivElement>, startHo
   return heightPerHour;
 };
 
-// Responsive block positioning with proportional height calculation
+// Responsive block positioning with consistent pixel alignment
 const getImprovedBlockPosition = (startTime: string, endTime: string, heightPerHour: number, startHour: number = 8) => {
   const startMinutes = timeToMinutes(startTime);
   const endMinutes = timeToMinutes(endTime);
@@ -591,15 +594,15 @@ const getImprovedBlockPosition = (startTime: string, endTime: string, heightPerH
   
   // Calculate position from start hour (8 AM = 0px)
   const startOffsetMinutes = startMinutes - (startHour * 60);
-  const top = Math.max(0, startOffsetMinutes * pixelsPerMinute);
+  const top = Math.max(0, Math.round(startOffsetMinutes * pixelsPerMinute));
   
   // Calculate height based purely on duration - no artificial minimums
   // This ensures true proportional representation regardless of viewport size
-  const height = duration * pixelsPerMinute;
+  const height = Math.round(duration * pixelsPerMinute);
   
   // Only apply a minimum height for very short blocks (less than 5 minutes) to ensure usability
   // This minimum scales with the viewport size
-  const absoluteMinHeight = Math.max(12, heightPerHour * 0.05); // 3% of hour height, minimum 12px
+  const absoluteMinHeight = Math.max(12, Math.round(heightPerHour * 0.05)); // 3% of hour height, minimum 12px
   const finalHeight = duration < 5 ? Math.max(absoluteMinHeight, height) : height;
   
   return {
@@ -773,13 +776,31 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
   }, [allBlocks, viewMode, selectedEntityId, optimisticBlocks, calendarView]);
 
   const getActivity = (activityId: string) => {
-    // Handle custom activities (stored as "custom:Activity Name")
+    // Handle custom activities (stored as "custom:Activity Name|#color" or "custom:Activity Name" for backward compatibility)
     if (activityId.startsWith('custom:')) {
-      const customName = activityId.replace('custom:', '');
+      const customData = activityId.replace('custom:', '');
+      let customName = "";
+      let customColor = "";
+      
+      if (customData.includes('|')) {
+        // New format: custom:ActivityName|#color
+        const [name, color] = customData.split('|');
+        customName = name;
+        customColor = color;
+      } else {
+        // Old format: custom:ActivityName (for backward compatibility)
+        customName = customData;
+        // Generate a consistent color based on the custom name for old format
+        const colors = ['blue', 'green', 'purple', 'orange', 'teal', 'indigo', 'pink', 'yellow', 'red'];
+        const hash = customName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        const colorIndex = hash % colors.length;
+        customColor = colors[colorIndex];
+      }
+      
       return {
         id: activityId,
         title: customName,
-        color: 'gray', // Default color for custom activities
+        color: customColor,
         description: ''
       };
     }
@@ -869,7 +890,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     const blockLeft = (blockIndex || 0) * blockWidth; // Position within the group
 
     // Enhanced visual separation for concurrent activities
-    let className = "schedule-block absolute rounded-md p-2 cursor-pointer shadow-sm border-l-4 ";
+    let className = "schedule-block absolute rounded-md p-2 cursor-pointer shadow-sm border-l-4 border-t border-b border-border/20 ";
     
     // Add visual separation between concurrent blocks
     if (totalOverlapping > 1) {
@@ -900,7 +921,15 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
         yellow: "bg-yellow-100 border-yellow-500 dark:bg-yellow-900/30",
         red: "bg-red-100 border-red-500 dark:bg-red-900/30",
       };
-      className += colorMap[activity.color] || "bg-gray-100 border-gray-500 dark:bg-gray-900/30";
+      
+      // Check if it's a hex color (custom activity)
+      if (activity.color.startsWith('#')) {
+        // For hex colors, use inline styles
+        className += "bg-opacity-20 dark:bg-opacity-10";
+      } else {
+        // For named colors, use the color map
+        className += colorMap[activity.color] || "bg-gray-100 border-gray-500 dark:bg-gray-900/30";
+      }
       
       // Add subtle background alternation for better lane distinction
       if (totalOverlapping > 1 && blockIndex !== undefined) {
@@ -931,13 +960,23 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
       zIndex: 10,
     };
 
+    // Add inline styles for hex colors
+    const inlineStyles: React.CSSProperties = {
+      ...baseStyle,
+    };
+
+    if (activity && activity.color.startsWith('#')) {
+      inlineStyles.backgroundColor = activity.color;
+      inlineStyles.borderLeftColor = activity.color;
+    }
+
     if (calendarView === "week" && columnIndex !== undefined) {
       // In week view, blocks are positioned relative to their column
       // No header offset needed - already positioned within day container
       return {
         className,
         style: {
-          ...baseStyle,
+          ...inlineStyles,
           left: "4px",
           right: "4px",
           zIndex: 10, // Above droppable areas
@@ -949,7 +988,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
       return {
         className,
         style: {
-          ...baseStyle,
+          ...inlineStyles,
           left: `${blockLeft}%`,
           width: `${blockWidth}%`,
           zIndex: 10, // Above droppable areas

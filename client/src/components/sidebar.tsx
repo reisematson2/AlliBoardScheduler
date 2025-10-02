@@ -8,6 +8,7 @@ import { Student, Aide, Activity } from "@shared/schema";
 import { EntityModal } from "./entity-modal";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { getTextColorClass } from "@/lib/color-utils";
 
 interface SidebarProps {
   onEntityUpdate?: () => void;
@@ -18,6 +19,11 @@ interface SidebarProps {
 
 // Color utility functions
 const getEntityColorClasses = (color: string) => {
+  // Handle hex colors
+  if (color.startsWith('#')) {
+    return "bg-opacity-10 border-opacity-30";
+  }
+  
   const colorMap: Record<string, string> = {
     blue: "bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800",
     green: "bg-green-50 border-green-200 dark:bg-green-950 dark:border-green-800",
@@ -33,6 +39,11 @@ const getEntityColorClasses = (color: string) => {
 };
 
 const getColorDot = (color: string) => {
+  // Handle hex colors
+  if (color.startsWith('#')) {
+    return "";
+  }
+  
   const colorMap: Record<string, string> = {
     blue: "bg-blue-500",
     green: "bg-green-500",
@@ -70,7 +81,13 @@ function DraggableStudent({ student, onEdit, onDelete, onHighlight, isHighlighte
   return (
     <Card
       ref={setNodeRef}
-      style={style}
+      style={{
+        ...style,
+        ...(student.color.startsWith('#') ? { 
+          backgroundColor: student.color,
+          borderColor: student.color 
+        } : {})
+      }}
       className={`p-3 ${getEntityColorClasses(student.color)} ${isDragging ? 'opacity-50' : ''} ${
         isHighlighted ? 'ring-2 ring-blue-400 ring-opacity-60 shadow-lg' : ''
       } cursor-pointer`}
@@ -85,8 +102,11 @@ function DraggableStudent({ student, onEdit, onDelete, onHighlight, isHighlighte
           >
             <GripVertical className="h-3 w-3 text-muted-foreground/50" />
           </div>
-          <div className={`w-3 h-3 rounded-full ${getColorDot(student.color)}`} />
-          <span className="font-medium text-sm" data-testid={`student-name-${student.id}`}>
+          <div 
+            className={`w-3 h-3 rounded-full ${getColorDot(student.color)}`}
+            style={student.color.startsWith('#') ? { backgroundColor: student.color } : {}}
+          />
+          <span className={`font-medium text-sm ${getTextColorClass(student.color)}`} data-testid={`student-name-${student.id}`}>
             {student.name}
           </span>
         </div>
@@ -136,7 +156,13 @@ function DraggableAide({ aide, onEdit, onDelete, onHighlight, isHighlighted }: {
   return (
     <Card
       ref={setNodeRef}
-      style={style}
+      style={{
+        ...style,
+        ...(aide.color.startsWith('#') ? { 
+          backgroundColor: aide.color,
+          borderColor: aide.color 
+        } : {})
+      }}
       className={`p-3 ${getEntityColorClasses(aide.color)} ${isDragging ? 'opacity-50' : ''} ${
         isHighlighted ? 'ring-2 ring-blue-400 ring-opacity-60 shadow-lg' : ''
       } cursor-pointer`}
@@ -151,8 +177,11 @@ function DraggableAide({ aide, onEdit, onDelete, onHighlight, isHighlighted }: {
           >
             <GripVertical className="h-3 w-3 text-muted-foreground/50" />
           </div>
-          <div className={`w-3 h-3 rounded-full ${getColorDot(aide.color)}`} />
-          <span className="font-medium text-sm" data-testid={`aide-name-${aide.id}`}>
+          <div 
+            className={`w-3 h-3 rounded-full ${getColorDot(aide.color)}`}
+            style={aide.color.startsWith('#') ? { backgroundColor: aide.color } : {}}
+          />
+          <span className={`font-medium text-sm ${getTextColorClass(aide.color)}`} data-testid={`aide-name-${aide.id}`}>
             {aide.name}
           </span>
         </div>
@@ -399,12 +428,19 @@ export function Sidebar({ onEntityUpdate, onEntityHighlight, highlightedEntityId
                 activities.map((activity) => (
                   <Card
                     key={activity.id}
+                    style={activity.color.startsWith('#') ? { 
+                      backgroundColor: activity.color,
+                      borderColor: activity.color 
+                    } : {}}
                     className={`p-3 ${getEntityColorClasses(activity.color)}`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
-                        <div className={`w-3 h-3 rounded-full ${getColorDot(activity.color)}`} />
-                        <span className="font-medium text-sm" data-testid={`activity-title-${activity.id}`}>
+                        <div 
+                          className={`w-3 h-3 rounded-full ${getColorDot(activity.color)}`}
+                          style={activity.color.startsWith('#') ? { backgroundColor: activity.color } : {}}
+                        />
+                        <span className={`font-medium text-sm ${getTextColorClass(activity.color)}`} data-testid={`activity-title-${activity.id}`}>
                           {activity.title}
                         </span>
                       </div>
