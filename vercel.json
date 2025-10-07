@@ -6,6 +6,10 @@
     {
       "src": "api/index.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "dist/public/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
@@ -17,8 +21,5 @@
       "src": "/(.*)",
       "dest": "/api/index.js"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }
