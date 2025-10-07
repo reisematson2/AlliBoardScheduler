@@ -197,11 +197,10 @@ app.delete('/api/templates/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// Serve static files
-app.use(express.static(path.join(__dirname, '../dist/public')));
-
-// Catch-all handler: send back React's index.html file
+// Serve static files - Vercel serves these automatically, but we need the catch-all
+// Catch-all handler: send back React's index.html file for SPA routing
 app.get('*', (req, res) => {
+  // In Vercel, static files are served automatically, so we only need to handle SPA routing
   res.sendFile(path.join(__dirname, '../dist/public/index.html'));
 });
 
