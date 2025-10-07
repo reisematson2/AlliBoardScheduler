@@ -2,6 +2,7 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { put, del, list } from '@vercel/blob';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,14 +24,212 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
-// Simple in-memory storage (same as your current setup)
-const storage = {
-  students: [],
-  aides: [],
-  activities: [],
-  blocks: [],
-  templates: []
-};
+// Vercel Blob Storage Implementation
+class BlobStorage {
+  constructor() {
+    this.basePath = 'alliboard-scheduler';
+  }
+
+  async getData(type) {
+    try {
+      const { blobs } = await list({
+        prefix: `${this.basePath}/${type}/`,
+        limit: 1000
+      });
+      
+      const data = [];
+      for (const blob of blobs) {
+        const response = await fetch(blob.url);
+        const item = await response.json();
+        data.push(item);
+      }
+      return data;
+    } catch (error) {
+      console.error(`Error getting ${type}:`, error);
+      return [];
+    }
+  }
+
+  async saveData(type, id, data) {
+    try {
+      const filename = `${this.basePath}/${type}/${id}.json`;
+      const blob = await put(filename, JSON.stringify(data), {
+        access: 'public',
+        contentType: 'application/json'
+      });
+      return data;
+    } catch (error) {
+      console.error(`Error saving ${type}:`, error);
+      throw error;
+    }
+  }
+
+  async deleteData(type, id) {
+    try {
+      const filename = `${this.basePath}/${type}/${id}.json`;
+      await del(filename);
+      return true;
+    } catch (error) {
+      console.error(`Error deleting ${type}:`, error);
+      return false;
+    }
+  }
+
+  // Students
+  async getStudents() {
+    return await this.getData('students');
+  }
+
+  async createStudent(studentData) {
+    const id = this.generateId();
+    const student = {
+      id,
+      ...studentData,
+      createdAt: new Date()
+    };
+    await this.saveData('students', id, student);
+    return student;
+  }
+
+  async updateStudent(id, updateData) {
+    const students = await this.getStudents();
+    const student = students.find(s => s.id === id);
+    if (!student) return null;
+    
+    const updatedStudent = { ...student, ...updateData };
+    await this.saveData('students', id, updatedStudent);
+    return updatedStudent;
+  }
+
+  async deleteStudent(id) {
+    return await this.deleteData('students', id);
+  }
+
+  // Aides
+  async getAides() {
+    return await this.getData('aides');
+  }
+
+  async createAide(aideData) {
+    const id = this.generateId();
+    const aide = {
+      id,
+      ...aideData,
+      createdAt: new Date()
+    };
+    await this.saveData('aides', id, aide);
+    return aide;
+  }
+
+  async updateAide(id, updateData) {
+    const aides = await this.getAides();
+    const aide = aides.find(a => a.id === id);
+    if (!aide) return null;
+    
+    const updatedAide = { ...aide, ...updateData };
+    await this.saveData('aides', id, updatedAide);
+    return updatedAide;
+  }
+
+  async deleteAide(id) {
+    return await this.deleteData('aides', id);
+  }
+
+  // Activities
+  async getActivities() {
+    return await this.getData('activities');
+  }
+
+  async createActivity(activityData) {
+    const id = this.generateId();
+    const activity = {
+      id,
+      ...activityData,
+      createdAt: new Date()
+    };
+    await this.saveData('activities', id, activity);
+    return activity;
+  }
+
+  async updateActivity(id, updateData) {
+    const activities = await this.getActivities();
+    const activity = activities.find(a => a.id === id);
+    if (!activity) return null;
+    
+    const updatedActivity = { ...activity, ...updateData };
+    await this.saveData('activities', id, updatedActivity);
+    return updatedActivity;
+  }
+
+  async deleteActivity(id) {
+    return await this.deleteData('activities', id);
+  }
+
+  // Blocks
+  async getBlocks(date) {
+    const blocks = await this.getData('blocks');
+    if (date) {
+      return blocks.filter(b => b.date === date);
+    }
+    return blocks;
+  }
+
+  async createBlock(blockData) {
+    const id = this.generateId();
+    const block = {
+      id,
+      ...blockData,
+      studentIds: blockData.studentIds || [],
+      aideIds: blockData.aideIds || [],
+      notes: blockData.notes || null,
+      recurrence: blockData.recurrence || '{"type":"none"}',
+      createdAt: new Date()
+    };
+    await this.saveData('blocks', id, block);
+    return block;
+  }
+
+  async updateBlock(id, updateData) {
+    const blocks = await this.getBlocks();
+    const block = blocks.find(b => b.id === id);
+    if (!block) return null;
+    
+    const updatedBlock = { ...block, ...updateData };
+    await this.saveData('blocks', id, updatedBlock);
+    return updatedBlock;
+  }
+
+  async deleteBlock(id) {
+    return await this.deleteData('blocks', id);
+  }
+
+  // Templates
+  async getTemplates() {
+    return await this.getData('templates');
+  }
+
+  async createTemplate(templateData) {
+    const id = this.generateId();
+    const template = {
+      id,
+      ...templateData,
+      createdAt: new Date()
+    };
+    await this.saveData('templates', id, template);
+    return template;
+  }
+
+  async deleteTemplate(id) {
+    return await this.deleteData('templates', id);
+  }
+
+  generateId() {
+    return Math.random().toString(36).substr(2, 9);
+  }
+}
+
+// Initialize Blob storage
+const storage = new BlobStorage();
 
 // API Routes
 app.get('/api/test', (req, res) => {
@@ -95,164 +294,228 @@ app.get('/api/debug', (req, res) => {
   });
 });
 
-app.get('/api/students', (req, res) => {
-  res.json(storage.students);
-});
-
-app.post('/api/students', (req, res) => {
-  const student = {
-    id: Math.random().toString(36).substr(2, 9),
-    ...req.body,
-    createdAt: new Date()
-  };
-  storage.students.push(student);
-  res.json(student);
-});
-
-app.put('/api/students/:id', (req, res) => {
-  const index = storage.students.findIndex(student => student.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ message: "Student not found" });
-  }
-  storage.students[index] = { ...storage.students[index], ...req.body };
-  res.json(storage.students[index]);
-});
-
-app.delete('/api/students/:id', (req, res) => {
-  const index = storage.students.findIndex(student => student.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ message: "Student not found" });
-  }
-  storage.students.splice(index, 1);
-  res.json({ success: true });
-});
-
-app.get('/api/aides', (req, res) => {
-  res.json(storage.aides);
-});
-
-app.post('/api/aides', (req, res) => {
-  const aide = {
-    id: Math.random().toString(36).substr(2, 9),
-    ...req.body,
-    createdAt: new Date()
-  };
-  storage.aides.push(aide);
-  res.json(aide);
-});
-
-app.put('/api/aides/:id', (req, res) => {
-  const index = storage.aides.findIndex(aide => aide.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ message: "Aide not found" });
-  }
-  storage.aides[index] = { ...storage.aides[index], ...req.body };
-  res.json(storage.aides[index]);
-});
-
-app.delete('/api/aides/:id', (req, res) => {
-  const index = storage.aides.findIndex(aide => aide.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ message: "Aide not found" });
-  }
-  storage.aides.splice(index, 1);
-  res.json({ success: true });
-});
-
-app.get('/api/activities', (req, res) => {
-  res.json(storage.activities);
-});
-
-app.post('/api/activities', (req, res) => {
-  const activity = {
-    id: Math.random().toString(36).substr(2, 9),
-    ...req.body,
-    createdAt: new Date()
-  };
-  storage.activities.push(activity);
-  res.json(activity);
-});
-
-app.put('/api/activities/:id', (req, res) => {
-  const index = storage.activities.findIndex(activity => activity.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ message: "Activity not found" });
-  }
-  storage.activities[index] = { ...storage.activities[index], ...req.body };
-  res.json(storage.activities[index]);
-});
-
-app.delete('/api/activities/:id', (req, res) => {
-  const index = storage.activities.findIndex(activity => activity.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ message: "Activity not found" });
-  }
-  storage.activities.splice(index, 1);
-  res.json({ success: true });
-});
-
-app.get('/api/blocks', (req, res) => {
-  const { date } = req.query;
-  if (date) {
-    res.json(storage.blocks.filter(block => block.date === date));
-  } else {
-    res.json(storage.blocks);
+app.get('/api/students', async (req, res) => {
+  try {
+    const students = await storage.getStudents();
+    console.log('📋 Getting students, count:', students.length);
+    res.json(students);
+  } catch (error) {
+    console.error('Error getting students:', error);
+    res.status(500).json({ error: 'Failed to get students' });
   }
 });
 
-app.post('/api/blocks', (req, res) => {
-  const block = {
-    id: Math.random().toString(36).substr(2, 9),
-    ...req.body,
-    studentIds: req.body.studentIds || [],
-    aideIds: req.body.aideIds || [],
-    notes: req.body.notes || '',
-    recurrence: req.body.recurrence || '{"type":"none"}',
-    createdAt: new Date()
-  };
-  storage.blocks.push(block);
-  res.json(block);
-});
-
-app.put('/api/blocks/:id', (req, res) => {
-  const index = storage.blocks.findIndex(block => block.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ message: "Block not found" });
+app.post('/api/students', async (req, res) => {
+  try {
+    console.log('📝 Creating student:', req.body);
+    const student = await storage.createStudent(req.body);
+    console.log('✅ Student created:', student);
+    res.json(student);
+  } catch (error) {
+    console.error('Error creating student:', error);
+    res.status(500).json({ error: 'Failed to create student' });
   }
-  storage.blocks[index] = { ...storage.blocks[index], ...req.body };
-  res.json(storage.blocks[index]);
 });
 
-app.delete('/api/blocks/:id', (req, res) => {
-  const index = storage.blocks.findIndex(block => block.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ message: "Block not found" });
+app.put('/api/students/:id', async (req, res) => {
+  try {
+    const updatedStudent = await storage.updateStudent(req.params.id, req.body);
+    if (!updatedStudent) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+    res.json(updatedStudent);
+  } catch (error) {
+    console.error('Error updating student:', error);
+    res.status(500).json({ error: 'Failed to update student' });
   }
-  storage.blocks.splice(index, 1);
-  res.json({ success: true });
 });
 
-app.get('/api/templates', (req, res) => {
-  res.json(storage.templates);
-});
-
-app.post('/api/templates', (req, res) => {
-  const template = {
-    id: Math.random().toString(36).substr(2, 9),
-    ...req.body,
-    createdAt: new Date()
-  };
-  storage.templates.push(template);
-  res.json(template);
-});
-
-app.delete('/api/templates/:id', (req, res) => {
-  const index = storage.templates.findIndex(template => template.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ message: "Template not found" });
+app.delete('/api/students/:id', async (req, res) => {
+  try {
+    const success = await storage.deleteStudent(req.params.id);
+    if (!success) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting student:', error);
+    res.status(500).json({ error: 'Failed to delete student' });
   }
-  storage.templates.splice(index, 1);
-  res.json({ success: true });
+});
+
+app.get('/api/aides', async (req, res) => {
+  try {
+    const aides = await storage.getAides();
+    console.log('📋 Getting aides, count:', aides.length);
+    res.json(aides);
+  } catch (error) {
+    console.error('Error getting aides:', error);
+    res.status(500).json({ error: 'Failed to get aides' });
+  }
+});
+
+app.post('/api/aides', async (req, res) => {
+  try {
+    console.log('📝 Creating aide:', req.body);
+    const aide = await storage.createAide(req.body);
+    console.log('✅ Aide created:', aide);
+    res.json(aide);
+  } catch (error) {
+    console.error('Error creating aide:', error);
+    res.status(500).json({ error: 'Failed to create aide' });
+  }
+});
+
+app.put('/api/aides/:id', async (req, res) => {
+  try {
+    const updatedAide = await storage.updateAide(req.params.id, req.body);
+    if (!updatedAide) {
+      return res.status(404).json({ message: "Aide not found" });
+    }
+    res.json(updatedAide);
+  } catch (error) {
+    console.error('Error updating aide:', error);
+    res.status(500).json({ error: 'Failed to update aide' });
+  }
+});
+
+app.delete('/api/aides/:id', async (req, res) => {
+  try {
+    const success = await storage.deleteAide(req.params.id);
+    if (!success) {
+      return res.status(404).json({ message: "Aide not found" });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting aide:', error);
+    res.status(500).json({ error: 'Failed to delete aide' });
+  }
+});
+
+app.get('/api/activities', async (req, res) => {
+  try {
+    const activities = await storage.getActivities();
+    res.json(activities);
+  } catch (error) {
+    console.error('Error getting activities:', error);
+    res.status(500).json({ error: 'Failed to get activities' });
+  }
+});
+
+app.post('/api/activities', async (req, res) => {
+  try {
+    const activity = await storage.createActivity(req.body);
+    res.json(activity);
+  } catch (error) {
+    console.error('Error creating activity:', error);
+    res.status(500).json({ error: 'Failed to create activity' });
+  }
+});
+
+app.put('/api/activities/:id', async (req, res) => {
+  try {
+    const updatedActivity = await storage.updateActivity(req.params.id, req.body);
+    if (!updatedActivity) {
+      return res.status(404).json({ message: "Activity not found" });
+    }
+    res.json(updatedActivity);
+  } catch (error) {
+    console.error('Error updating activity:', error);
+    res.status(500).json({ error: 'Failed to update activity' });
+  }
+});
+
+app.delete('/api/activities/:id', async (req, res) => {
+  try {
+    const success = await storage.deleteActivity(req.params.id);
+    if (!success) {
+      return res.status(404).json({ message: "Activity not found" });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting activity:', error);
+    res.status(500).json({ error: 'Failed to delete activity' });
+  }
+});
+
+app.get('/api/blocks', async (req, res) => {
+  try {
+    const { date } = req.query;
+    const blocks = await storage.getBlocks(date);
+    res.json(blocks);
+  } catch (error) {
+    console.error('Error getting blocks:', error);
+    res.status(500).json({ error: 'Failed to get blocks' });
+  }
+});
+
+app.post('/api/blocks', async (req, res) => {
+  try {
+    const block = await storage.createBlock(req.body);
+    res.json(block);
+  } catch (error) {
+    console.error('Error creating block:', error);
+    res.status(500).json({ error: 'Failed to create block' });
+  }
+});
+
+app.put('/api/blocks/:id', async (req, res) => {
+  try {
+    const updatedBlock = await storage.updateBlock(req.params.id, req.body);
+    if (!updatedBlock) {
+      return res.status(404).json({ message: "Block not found" });
+    }
+    res.json(updatedBlock);
+  } catch (error) {
+    console.error('Error updating block:', error);
+    res.status(500).json({ error: 'Failed to update block' });
+  }
+});
+
+app.delete('/api/blocks/:id', async (req, res) => {
+  try {
+    const success = await storage.deleteBlock(req.params.id);
+    if (!success) {
+      return res.status(404).json({ message: "Block not found" });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting block:', error);
+    res.status(500).json({ error: 'Failed to delete block' });
+  }
+});
+
+app.get('/api/templates', async (req, res) => {
+  try {
+    const templates = await storage.getTemplates();
+    res.json(templates);
+  } catch (error) {
+    console.error('Error getting templates:', error);
+    res.status(500).json({ error: 'Failed to get templates' });
+  }
+});
+
+app.post('/api/templates', async (req, res) => {
+  try {
+    const template = await storage.createTemplate(req.body);
+    res.json(template);
+  } catch (error) {
+    console.error('Error creating template:', error);
+    res.status(500).json({ error: 'Failed to create template' });
+  }
+});
+
+app.delete('/api/templates/:id', async (req, res) => {
+  try {
+    const success = await storage.deleteTemplate(req.params.id);
+    if (!success) {
+      return res.status(404).json({ message: "Template not found" });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting template:', error);
+    res.status(500).json({ error: 'Failed to delete template' });
+  }
 });
 
 // Catch-all handler: send back React's index.html file for SPA routing
