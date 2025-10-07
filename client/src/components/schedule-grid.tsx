@@ -316,6 +316,8 @@ interface DroppableBlockProps {
   onBlockEdit?: (block: Block) => void;
   onBlockDelete?: (block: Block) => void;
   onBlockCopy?: (block: Block) => void;
+  isSelected?: boolean;
+  onBlockSelect?: (blockId: string, multiSelect?: boolean) => void;
 }
 
 function DroppableBlock({ 
@@ -332,7 +334,9 @@ function DroppableBlock({
   formatTimeDisplay,
   onBlockEdit,
   onBlockDelete,
-  onBlockCopy
+  onBlockCopy,
+  isSelected = false,
+  onBlockSelect
 }: DroppableBlockProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: `block-${block.id}`,
@@ -346,13 +350,28 @@ function DroppableBlock({
             <TooltipTrigger asChild>
               <div
                 ref={setNodeRef}
-                className={`${blockStyle.className} ${isOver ? 'ring-2 ring-blue-400 ring-opacity-50' : ''}`}
+                className={`${blockStyle.className} ${isOver ? 'ring-2 ring-blue-400 ring-opacity-50' : ''} ${isSelected ? 'ring-2 ring-blue-500 ring-opacity-80 shadow-lg' : ''}`}
                 style={{
                   ...blockStyle.style,
                   pointerEvents: 'auto',
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
+                  
+                  // Handle selection if Ctrl/Cmd is held
+                  if (e.ctrlKey || e.metaKey) {
+                    onBlockSelect?.(block.id, true);
+                    return;
+                  }
+                  
+                  // Handle selection if Shift is held
+                  if (e.shiftKey) {
+                    onBlockSelect?.(block.id, true);
+                    return;
+                  }
+                  
+                  // Normal click - select block and open modal
+                  onBlockSelect?.(block.id, false);
                   onBlockClick(block);
                 }}
                 onDoubleClick={(e) => {
@@ -477,6 +496,9 @@ import {
   getCurrentDate
 } from "@/lib/time-utils";
 import { getTextColorClass, getMutedTextColorClass } from "@/lib/color-utils";
+import { undoManager, UndoAction } from "@/lib/undo-manager";
+import { selectionManager, SelectionState } from "@/lib/selection-manager";
+import { SelectionToolbar } from "./selection-toolbar";
 import { detectConflicts } from "@/lib/conflicts";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation } from "@tanstack/react-query";
@@ -628,6 +650,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
   const [resizingBlock, setResizingBlock] = useState<{ id: string; type: 'top' | 'bottom'; startY: number; originalBlock: Block } | null>(null);
   const [optimisticBlocks, setOptimisticBlocks] = useState<Map<string, Block>>(new Map());
   const [forceRecalculate, setForceRecalculate] = useState(0);
+  const [selectionState, setSelectionState] = useState<SelectionState>(selectionManager.getState());
   const resizeDraftRef = useRef<Block | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
@@ -681,18 +704,23 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
 
   const updateBlockMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => {
-      console.log('updateBlockMutation called with:', { id, data });
       return apiRequest("PUT", `/api/blocks/${id}`, data);
     },
     onSuccess: (result) => {
-      console.log('updateBlockMutation success:', result);
       // Invalidate cache with all relevant variables
       queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
-      toast({ title: "Block updated successfully" });
+      toast({ 
+        title: "Schedule updated successfully", 
+        description: "Your changes have been saved."
+      });
     },
     onError: (error) => {
       console.error('updateBlockMutation error:', error);
-      toast({ title: "Failed to update block", variant: "destructive" });
+      toast({ 
+        title: "Failed to update schedule", 
+        description: "Please try again. If the problem persists, refresh the page.",
+        variant: "destructive" 
+      });
     },
   });
 
@@ -718,6 +746,12 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
       setForceRecalculate(prev => prev + 1);
     }, 200);
     return () => clearTimeout(timer);
+  }, []);
+
+  // Subscribe to selection changes
+  React.useEffect(() => {
+    const unsubscribe = selectionManager.subscribe(setSelectionState);
+    return unsubscribe;
   }, []);
 
   // Keyboard shortcuts
@@ -1106,11 +1140,88 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     }
 
     try {
+      // Store the block data for undo before deleting
+      undoManager.addAction('delete', { block });
+      
       await apiRequest("DELETE", `/api/blocks/${block.id}`);
       queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
       toast({ title: "Block deleted successfully" });
     } catch (error) {
       toast({ title: "Failed to delete block", variant: "destructive" });
+    }
+  };
+
+  const handleBulkDelete = async (blockIds: string[]) => {
+    if (!confirm(`Are you sure you want to delete ${blockIds.length} blocks?`)) {
+      return;
+    }
+
+    try {
+      // Get the blocks to be deleted for undo
+      const blocksToDelete = allBlocks.filter(block => blockIds.includes(block.id));
+      
+      // Store the blocks data for undo before deleting
+      undoManager.addAction('delete', { blocks: blocksToDelete });
+      
+      // Delete all blocks
+      await Promise.all(blockIds.map(id => apiRequest("DELETE", `/api/blocks/${id}`)));
+      
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+      selectionManager.clearSelection();
+      toast({ title: `${blockIds.length} blocks deleted successfully` });
+    } catch (error) {
+      toast({ title: "Failed to delete blocks", variant: "destructive" });
+    }
+  };
+
+  const handleUndo = async () => {
+    const action = undoManager.getLastAction();
+    if (!action) return;
+
+    try {
+      switch (action.type) {
+        case 'delete':
+          if (action.data.block) {
+            // Restore single block
+            await apiRequest("POST", "/api/blocks", action.data.block);
+            toast({ title: "Block restored" });
+          } else if (action.data.blocks) {
+            // Restore multiple blocks
+            await Promise.all(action.data.blocks.map((block: Block) => 
+              apiRequest("POST", "/api/blocks", block)
+            ));
+            toast({ title: `${action.data.blocks.length} blocks restored` });
+          }
+          break;
+        case 'create':
+          // Delete the created block
+          if (action.data.block) {
+            await apiRequest("DELETE", `/api/blocks/${action.data.block.id}`);
+            toast({ title: "Block creation undone" });
+          }
+          break;
+        case 'update':
+          // Restore the original block data
+          if (action.data.originalBlock) {
+            await apiRequest("PUT", `/api/blocks/${action.data.originalBlock.id}`, action.data.originalBlock);
+            toast({ title: "Block update undone" });
+          }
+          break;
+      }
+      
+      // Remove the action from history
+      undoManager.undo();
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+    } catch (error) {
+      toast({ title: "Failed to undo action", variant: "destructive" });
+    }
+  };
+
+  const handleBlockSelect = (blockId: string, multiSelect: boolean = false) => {
+    if (multiSelect) {
+      selectionManager.toggleBlock(blockId);
+    } else {
+      selectionManager.selectBlock(blockId);
     }
   };
 
@@ -1241,6 +1352,11 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
 
   return (
     <>
+      <SelectionToolbar
+        onDeleteSelected={handleBulkDelete}
+        onUndo={handleUndo}
+        totalBlocks={allBlocks.length}
+      />
       <Card className="flex-1 flex flex-col overflow-hidden">
         <div className="border-b border-border p-4">
           <div className="flex items-center justify-between">
@@ -1437,6 +1553,8 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                                 onBlockEdit={handleBlockEdit}
                                 onBlockDelete={handleBlockDelete}
                                 onBlockCopy={handleBlockCopy}
+                                isSelected={selectionManager.isSelected(block.id)}
+                                onBlockSelect={handleBlockSelect}
                               />
                             );
                             })
@@ -1553,6 +1671,8 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                           onBlockEdit={handleBlockEdit}
                           onBlockDelete={handleBlockDelete}
                           onBlockCopy={handleBlockCopy}
+                          isSelected={selectionManager.isSelected(block.id)}
+                          onBlockSelect={handleBlockSelect}
                         />
                       );
                       })

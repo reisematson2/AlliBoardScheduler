@@ -209,7 +209,11 @@ export default function Schedule() {
         queryClient.setQueryData(["/api/blocks", calendarView, selectedDate], context.previousBlocks);
       }
       
-      toast({ title: "Failed to move block", variant: "destructive" });
+      toast({ 
+        title: "Failed to move schedule block", 
+        description: "The change could not be saved. Please try again.",
+        variant: "destructive" 
+      });
     },
   });
 

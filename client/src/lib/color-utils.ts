@@ -31,7 +31,7 @@ function getLuminance(r: number, g: number, b: number): number {
  * Returns true if the color is dark (needs light text)
  */
 export function isDarkColor(color: string): boolean {
-  // Handle named colors
+  // Handle named colors - these are the base colors, but the schedule uses light variants
   const namedColors: Record<string, string> = {
     blue: "#3B82F6",
     green: "#10B981", 
@@ -44,13 +44,21 @@ export function isDarkColor(color: string): boolean {
     red: "#EF4444",
   };
 
+  // For schedule blocks, we need to check if the actual background is light or dark
+  // The schedule uses light variants (bg-*-100) which are always light backgrounds
   const hexColor = color.startsWith('#') ? color : namedColors[color] || "#3B82F6";
   const rgb = hexToRgb(hexColor);
   
   if (!rgb) return false;
   
   const luminance = getLuminance(rgb.r, rgb.g, rgb.b);
-  return luminance < 0.5; // Threshold for dark colors
+  // For named colors used in schedule blocks (which use light backgrounds), always return false
+  // This ensures we use dark text on light backgrounds
+  if (!color.startsWith('#')) {
+    return false;
+  }
+  
+  return luminance < 0.3;
 }
 
 /**
@@ -59,7 +67,7 @@ export function isDarkColor(color: string): boolean {
 export function getTextColorClass(color: string): string {
   return isDarkColor(color) 
     ? "text-white" 
-    : "text-gray-900 dark:text-gray-100";
+    : "text-gray-800 dark:text-gray-200";
 }
 
 /**
@@ -67,6 +75,6 @@ export function getTextColorClass(color: string): string {
  */
 export function getMutedTextColorClass(color: string): string {
   return isDarkColor(color) 
-    ? "text-white/80" 
+    ? "text-white/90" 
     : "text-gray-600 dark:text-gray-400";
 }

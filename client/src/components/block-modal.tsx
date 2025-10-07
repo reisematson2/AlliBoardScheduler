@@ -36,6 +36,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { getTextColorClass, getMutedTextColorClass } from "@/lib/color-utils";
+import { undoManager } from "@/lib/undo-manager";
 import { CalendarIcon, ChevronUp, ChevronDown } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -181,6 +182,13 @@ export function BlockModal({
       const blockCount = result?.count || 1;
       const isRecurring = blockCount > 1;
       
+      // Track the action for undo
+      if (result?.block) {
+        undoManager.addAction('create', { block: result.block });
+      } else if (result?.blocks) {
+        undoManager.addAction('create', { blocks: result.blocks });
+      }
+      
       // Invalidate all block queries to ensure updates are reflected
       queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
       
@@ -199,8 +207,23 @@ export function BlockModal({
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("PUT", `/api/blocks/${block!.id}`, data),
-    onSuccess: () => {
+    mutationFn: (data: any) => {
+      // Store original block data for undo before updating
+      const originalBlock = block;
+      return apiRequest("PUT", `/api/blocks/${block!.id}`, data).then(result => ({
+        ...result,
+        originalBlock
+      }));
+    },
+    onSuccess: (result: any) => {
+      // Track the action for undo
+      if (result?.originalBlock) {
+        undoManager.addAction('update', { 
+          originalBlock: result.originalBlock,
+          updatedBlock: result 
+        });
+      }
+      
       // Invalidate all block queries to ensure updates are reflected
       queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
       toast({ title: "Schedule block updated successfully" });
