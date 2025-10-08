@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 
 export default defineConfig({
+  base: '',
   plugins: [
     react(),
     // Only include Replit plugins in development and when REPL_ID is present
