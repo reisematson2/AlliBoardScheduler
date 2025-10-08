@@ -553,6 +553,23 @@ app.delete('/api/templates/:id', async (req, res) => {
   }
 });
 
+// Embedded static files for guaranteed availability
+const EMBEDDED_HTML = `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Architects+Daughter&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Fira+Code:wght@300..700&family=Geist+Mono:wght@100..900&family=Geist:wght@100..900&family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Lora:ital,wght@0,400..700;1,400..700&family=Merriweather:ital,opsz,wght@0,18..144,300..900;1,18..144,300..900&family=Montserrat:ital,wght@0,100..900;1,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Outfit:wght@100..900&family=Oxanium:wght@200..800&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Roboto+Mono:ital,wght@0,100..700;1,100..700&family=Roboto:wght@0,100..900;1,100..900&family=Source+Code+Pro:ital,wght@0,200..900;1,200..900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&family=Space+Grotesk:wght@300..700&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+    <script type="module" crossorigin src="/assets/index-Cq45Okkm.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-D-sMJFOT.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>`;
+
 // Catch-all handler: send back React's index.html file for SPA routing
 app.get('*', (req, res) => {
   console.log(`🔍 Request received: ${req.method} ${req.url}`);
@@ -580,44 +597,10 @@ app.get('*', (req, res) => {
     return;
   }
   
-  // For non-asset requests, serve the HTML
-  const htmlPath = path.join(__dirname, '../dist/public/index.html');
-  console.log(`📄 Looking for HTML file: ${htmlPath}`);
-  
-  import('fs').then(fs => {
-    if (fs.existsSync(htmlPath)) {
-      console.log(`✅ Serving HTML: ${htmlPath}`);
-      res.sendFile(htmlPath);
-    } else {
-      console.error(`❌ HTML file not found: ${htmlPath}`);
-      // Fallback if static files aren't available
-      res.status(200).send(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>AlliBoard Scheduler - Debug</title>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-          </head>
-          <body>
-            <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
-              <h1>AlliBoard Scheduler - Debug Mode</h1>
-              <p>Request: ${req.method} ${req.url}</p>
-              <p>Directory: ${__dirname}</p>
-              <p>HTML Path: ${htmlPath}</p>
-              <p>If you see this message, the static files are not available.</p>
-              <script>
-                setTimeout(() => window.location.reload(), 5000);
-              </script>
-            </div>
-          </body>
-        </html>
-      `);
-    }
-  }).catch(error => {
-    console.error(`❌ Error serving HTML:`, error);
-    res.status(500).send('Internal server error');
-  });
+  // For non-asset requests, serve the embedded HTML
+  console.log(`📄 Serving embedded HTML for: ${req.url}`);
+  res.setHeader('Content-Type', 'text/html');
+  res.send(EMBEDDED_HTML);
 });
 
 export default app;
