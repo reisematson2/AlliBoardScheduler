@@ -28,27 +28,13 @@ app.use(express.json());
 class BlobStorage {
   constructor() {
     this.basePath = 'alliboard-scheduler';
-    this.token = process.env.BLOB_READ_WRITE_TOKEN;
-    
-    if (!this.token) {
-      console.error('❌ BLOB_READ_WRITE_TOKEN not found in environment variables');
-      console.error('Available env vars:', Object.keys(process.env).filter(key => key.includes('BLOB')));
-    } else {
-      console.log('✅ BLOB_READ_WRITE_TOKEN found, length:', this.token.length);
-    }
   }
 
   async getData(type) {
     try {
-      if (!this.token) {
-        console.error(`❌ No BLOB token available for getting ${type}`);
-        return [];
-      }
-      
       const { blobs } = await list({
         prefix: `${this.basePath}/${type}/`,
-        limit: 1000,
-        token: this.token
+        limit: 1000
       });
       
       const data = [];
@@ -66,16 +52,10 @@ class BlobStorage {
 
   async saveData(type, id, data) {
     try {
-      if (!this.token) {
-        console.error(`❌ No BLOB token available for saving ${type}`);
-        throw new Error('BLOB_READ_WRITE_TOKEN not configured');
-      }
-      
       const filename = `${this.basePath}/${type}/${id}.json`;
       const blob = await put(filename, JSON.stringify(data), {
         access: 'public',
-        contentType: 'application/json',
-        token: this.token
+        contentType: 'application/json'
       });
       return data;
     } catch (error) {
@@ -86,13 +66,8 @@ class BlobStorage {
 
   async deleteData(type, id) {
     try {
-      if (!this.token) {
-        console.error(`❌ No BLOB token available for deleting ${type}`);
-        return false;
-      }
-      
       const filename = `${this.basePath}/${type}/${id}.json`;
-      await del(filename, { token: this.token });
+      await del(filename);
       return true;
     } catch (error) {
       console.error(`Error deleting ${type}:`, error);
