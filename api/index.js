@@ -622,10 +622,27 @@ app.get('*', (req, res) => {
     return;
   }
   
-  // For non-asset requests, serve the embedded HTML
-  console.log(`📄 Serving embedded HTML for: ${req.url}`);
-  res.setHeader('Content-Type', 'text/html');
-  res.send(EMBEDDED_HTML);
+  // For non-asset requests, try to serve the actual HTML file first
+  const htmlPath = path.join(__dirname, '../dist/public/index.html');
+  console.log(`📄 Looking for HTML file: ${htmlPath}`);
+
+  import('fs').then(fs => {
+    if (fs.existsSync(htmlPath)) {
+      console.log(`✅ Serving actual HTML: ${htmlPath}`);
+      res.sendFile(htmlPath);
+    } else {
+      console.error(`❌ HTML file not found: ${htmlPath}`);
+      console.log(`🔄 Falling back to embedded HTML`);
+      // Fallback to embedded HTML with full functionality
+      res.setHeader('Content-Type', 'text/html');
+      res.send(EMBEDDED_HTML);
+    }
+  }).catch(error => {
+    console.error(`❌ Error serving HTML:`, error);
+    console.log(`🔄 Falling back to embedded HTML due to error`);
+    res.setHeader('Content-Type', 'text/html');
+    res.send(EMBEDDED_HTML);
+  });
 });
 
 export default app;
