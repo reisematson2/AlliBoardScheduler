@@ -570,37 +570,5 @@ const EMBEDDED_HTML = `<!DOCTYPE html>
         </body>
 </html>`;
 
-// Catch-all handler: send back React's index.html file for SPA routing
-app.get('*', (req, res) => {
-  console.log(`🔍 Request received: ${req.method} ${req.url}`);
-  console.log(`📁 Current directory: ${__dirname}`);
-  
-  // Check if this is an asset request
-  if (req.url.startsWith('/assets/')) {
-    console.log(`🎨 Asset request detected: ${req.url}`);
-    console.log(`📄 Looking for asset: ${path.join(__dirname, '../dist', req.url)}`);
-    try {
-      const assetPath = path.join(__dirname, '../dist', req.url);
-      console.log(`✅ Attempting to serve asset: ${assetPath}`);
-      res.sendFile(assetPath);
-    } catch (error) {
-      console.error(`❌ Error serving asset:`, error);
-      res.status(404).send('Asset not found');
-    }
-    return;
-  }
-
-  // For non-asset requests, serve the HTML
-  console.log(`📄 Looking for HTML file: ${path.join(__dirname, '../dist/index.html')}`);
-  try {
-    const filePath = path.join(__dirname, '../dist/index.html');
-    console.log(`✅ Attempting to serve HTML: ${filePath}`);
-    res.sendFile(filePath);
-  } catch (error) {
-    console.error(`❌ Error serving HTML:`, error);
-    // Fallback if static files aren't available
-    res.status(500).send('Static files not available.');
-  }
-});
 
 export default app;
