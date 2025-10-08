@@ -589,60 +589,16 @@ const EMBEDDED_HTML = `<!DOCTYPE html>
         \`;
       }
     </script>
-  </head>
-  <body>
+        </head>
+        <body>
     <div id="root"></div>
-  </body>
+        </body>
 </html>`;
 
-// Catch-all handler: send back React's index.html file for SPA routing
+// 404 handler for unmatched API routes
 app.get('*', (req, res) => {
-  console.log(`🔍 Request received: ${req.method} ${req.url}`);
-  console.log(`📁 Current directory: ${__dirname}`);
-  
-  // Check if this is an asset request
-  if (req.url.startsWith('/assets/')) {
-    console.log(`🎨 Asset request detected: ${req.url}`);
-    const assetPath = path.join(__dirname, '../dist/public', req.url);
-    console.log(`📄 Looking for asset: ${assetPath}`);
-    
-    // Try to serve the asset file
-    import('fs').then(fs => {
-      if (fs.existsSync(assetPath)) {
-        console.log(`✅ Serving asset: ${assetPath}`);
-        res.sendFile(assetPath);
-      } else {
-        console.error(`❌ Asset not found: ${assetPath}`);
-        res.status(404).send('Asset not found');
-      }
-    }).catch(error => {
-      console.error(`❌ Error serving asset:`, error);
-      res.status(404).send('Asset not found');
-    });
-    return;
-  }
-  
-  // For non-asset requests, try to serve the actual HTML file first
-  const htmlPath = path.join(__dirname, '../dist/public/index.html');
-  console.log(`📄 Looking for HTML file: ${htmlPath}`);
-
-  import('fs').then(fs => {
-    if (fs.existsSync(htmlPath)) {
-      console.log(`✅ Serving actual HTML: ${htmlPath}`);
-      res.sendFile(htmlPath);
-    } else {
-      console.error(`❌ HTML file not found: ${htmlPath}`);
-      console.log(`🔄 Falling back to embedded HTML`);
-      // Fallback to embedded HTML with full functionality
-      res.setHeader('Content-Type', 'text/html');
-      res.send(EMBEDDED_HTML);
-    }
-  }).catch(error => {
-    console.error(`❌ Error serving HTML:`, error);
-    console.log(`🔄 Falling back to embedded HTML due to error`);
-    res.setHeader('Content-Type', 'text/html');
-    res.send(EMBEDDED_HTML);
-  });
+  console.log(`🔍 Unmatched API request: ${req.method} ${req.url}`);
+  res.status(404).json({ error: 'API endpoint not found' });
 });
 
 export default app;
