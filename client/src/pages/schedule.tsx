@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { DndContext, DragEndEvent, DragOverlay, closestCenter } from "@dnd-kit/core";
+import { DndContext, DragEndEvent, DragOverlay, closestCenter, pointerWithin } from "@dnd-kit/core";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -58,6 +58,7 @@ export default function Schedule() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [highlightedEntityId, setHighlightedEntityId] = useState<string | null>(null);
   const [highlightedEntityType, setHighlightedEntityType] = useState<'student' | 'aide' | null>(null);
+  const [isDragOperationPending, setIsDragOperationPending] = useState(false);
   const { toast } = useToast();
 
   // Navigation functions
@@ -238,8 +239,20 @@ export default function Schedule() {
 
     // Only handle entity drops (students/aides to blocks)
     if (activeId.startsWith('student-') || activeId.startsWith('aide-')) {
-      console.log('👥 Handling entity drop');
-      handleEntityDrop(activeId, destinationId);
+      // Validate drop target
+      if (destinationId.startsWith('block-')) {
+        console.log('👥 Handling entity drop to block');
+        handleEntityDrop(activeId, destinationId);
+      } else if (destinationId.startsWith('timeslot-')) {
+        console.log('👥 Handling entity drop to time slot');
+        handleTimeSlotDrop(activeId, destinationId);
+      } else {
+        toast({ 
+          title: "Invalid drop target", 
+          description: "Please drop on a schedule block or time slot",
+          variant: "destructive" 
+        });
+      }
       return;
     }
 
@@ -247,39 +260,115 @@ export default function Schedule() {
     console.log('📦 Block dragging disabled - ignoring drag operation');
   };
 
-  const handleEntityDrop = (activeId: string, destinationId: string) => {
+  const handleEntityDrop = async (activeId: string, destinationId: string) => {
     const isStudent = activeId.startsWith('student-');
     const entityId = activeId.replace(/^(student-|aide-)/, '');
-    const blockId = destinationId.replace('block-', '');
     
+    // Better validation
+    if (!destinationId.startsWith('block-')) {
+      toast({ 
+        title: "Invalid drop target", 
+        description: "Please drop on a schedule block",
+        variant: "destructive" 
+      });
+      return;
+    }
+    
+    const blockId = destinationId.replace('block-', '');
     const targetBlock = blocks.find(block => block.id === blockId);
-    if (!targetBlock) return;
-
-    const updatedBlock = { ...targetBlock };
-    if (isStudent) {
-      if (!updatedBlock.studentIds.includes(entityId)) {
-        updatedBlock.studentIds = [...updatedBlock.studentIds, entityId];
-      }
-    } else {
-      if (!updatedBlock.aideIds.includes(entityId)) {
-        updatedBlock.aideIds = [...updatedBlock.aideIds, entityId];
-      }
+    
+    if (!targetBlock) {
+      toast({ 
+        title: "Block not found", 
+        description: "The target block could not be found",
+        variant: "destructive" 
+      });
+      return;
     }
 
-    updateBlockMutation.mutate({
-      id: blockId,
-      data: updatedBlock,
-    });
+    // Check for duplicates with user feedback
+    const isAlreadyAssigned = isStudent 
+      ? targetBlock.studentIds.includes(entityId)
+      : targetBlock.aideIds.includes(entityId);
+      
+    if (isAlreadyAssigned) {
+      const entityName = isStudent 
+        ? students.find(s => s.id === entityId)?.name 
+        : aides.find(a => a.id === entityId)?.name;
+      toast({ 
+        title: "Already assigned", 
+        description: `${entityName} is already assigned to this block`,
+        variant: "destructive" 
+      });
+      return;
+    }
 
-    const activity = activities.find(a => a.id === targetBlock.activityId);
-    toast({ 
-      title: `${isStudent ? 'Student' : 'Aide'} added to block`,
-      description: `Added to ${activity?.title || 'activity'}`
-    });
+    // Optimistic update with rollback
+    const updatedBlock = { ...targetBlock };
+    if (isStudent) {
+      updatedBlock.studentIds = [...updatedBlock.studentIds, entityId];
+    } else {
+      updatedBlock.aideIds = [...updatedBlock.aideIds, entityId];
+    }
+
+    setIsDragOperationPending(true);
+
+    try {
+      await updateBlockMutation.mutateAsync({
+        id: blockId,
+        data: updatedBlock,
+      });
+      
+      const activity = activities.find(a => a.id === targetBlock.activityId);
+      const entityName = isStudent 
+        ? students.find(s => s.id === entityId)?.name 
+        : aides.find(a => a.id === entityId)?.name;
+        
+      toast({ 
+        title: `${isStudent ? 'Student' : 'Aide'} added successfully`, 
+        description: `${entityName} added to ${activity?.title || 'activity'}`
+      });
+    } catch (error) {
+      console.error('Failed to add participant:', error);
+      toast({ 
+        title: "Failed to add participant", 
+        description: "Please try again or refresh the page",
+        variant: "destructive" 
+      });
+    } finally {
+      setIsDragOperationPending(false);
+    }
   };
 
-
-
+  const handleTimeSlotDrop = (activeId: string, destinationId: string) => {
+    const isStudent = activeId.startsWith('student-');
+    const entityId = activeId.replace(/^(student-|aide-)/, '');
+    
+    // Extract time slot information
+    const timeSlotMatch = destinationId.match(/timeslot-(?:(\d{4}-\d{2}-\d{2})-)?(\d+)/);
+    if (!timeSlotMatch) {
+      toast({ 
+        title: "Invalid time slot", 
+        description: "Could not determine the target time slot",
+        variant: "destructive" 
+      });
+      return;
+    }
+    
+    const [, date, slotIndex] = timeSlotMatch;
+    const targetDate = date || selectedDate;
+    
+    // For now, just show a message that this feature could be implemented
+    const entityName = isStudent 
+      ? students.find(s => s.id === entityId)?.name 
+      : aides.find(a => a.id === entityId)?.name;
+      
+    toast({ 
+      title: "Time slot drop", 
+      description: `Dropping ${entityName} on time slot - this could create a new block`,
+      variant: "default" 
+    });
+  };
 
   const handleViewModeChange = (mode: string) => {
     const newMode = mode as "master" | "student" | "aide";
@@ -668,7 +757,7 @@ export default function Schedule() {
       <DndContext 
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
-        collisionDetection={closestCenter}
+        collisionDetection={pointerWithin}
       >
         <div className="flex h-screen">
           <Sidebar 
@@ -699,9 +788,14 @@ export default function Schedule() {
         
         <DragOverlay>
           {activeId ? (
-            <div className="bg-primary text-primary-foreground p-2 rounded shadow-lg opacity-90">
+            <div className={`bg-primary text-primary-foreground p-2 rounded shadow-lg opacity-90 ${
+              isDragOperationPending ? 'animate-pulse' : ''
+            }`}>
               {activeId.startsWith('student-') ? 'Student' : 
                activeId.startsWith('aide-') ? 'Aide' : 'Block'}
+              {isDragOperationPending && (
+                <div className="text-xs mt-1 opacity-75">Adding...</div>
+              )}
             </div>
           ) : null}
         </DragOverlay>

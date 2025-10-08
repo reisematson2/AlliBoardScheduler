@@ -88,10 +88,13 @@ function DraggableStudent({ student, onEdit, onDelete, onHighlight, isHighlighte
           borderColor: student.color 
         } : {})
       }}
-      className={`p-3 ${getEntityColorClasses(student.color)} ${isDragging ? 'opacity-50' : ''} ${
+      className={`p-3 ${getEntityColorClasses(student.color)} ${isDragging ? 'opacity-50 scale-105 shadow-xl' : 'hover:shadow-md'} ${
         isHighlighted ? 'ring-2 ring-blue-400 ring-opacity-60 shadow-lg' : ''
-      } cursor-pointer`}
+      } cursor-pointer transition-all duration-200`}
       onClick={() => onHighlight?.(student.id, 'student')}
+      role="button"
+      aria-label={`Drag student ${student.name} to schedule blocks`}
+      tabIndex={0}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
@@ -163,10 +166,13 @@ function DraggableAide({ aide, onEdit, onDelete, onHighlight, isHighlighted }: {
           borderColor: aide.color 
         } : {})
       }}
-      className={`p-3 ${getEntityColorClasses(aide.color)} ${isDragging ? 'opacity-50' : ''} ${
+      className={`p-3 ${getEntityColorClasses(aide.color)} ${isDragging ? 'opacity-50 scale-105 shadow-xl' : 'hover:shadow-md'} ${
         isHighlighted ? 'ring-2 ring-blue-400 ring-opacity-60 shadow-lg' : ''
-      } cursor-pointer`}
+      } cursor-pointer transition-all duration-200`}
       onClick={() => onHighlight?.(aide.id, 'aide')}
+      role="button"
+      aria-label={`Drag aide ${aide.name} to schedule blocks`}
+      tabIndex={0}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">

@@ -348,6 +348,14 @@ function DroppableBlock({
     id: `block-${block.id}`,
   });
 
+  // Better visual feedback for drop operations
+  const getDropFeedbackClass = () => {
+    if (isOver) {
+      return 'ring-2 ring-green-400 ring-opacity-70 bg-green-50/50 dark:bg-green-900/20 transition-all duration-200';
+    }
+    return '';
+  };
+
   // Helper function to get the display text based on view mode
   const getDisplayText = () => {
     const activityName = activity?.title || "Unknown Activity";
@@ -386,11 +394,14 @@ function DroppableBlock({
             <TooltipTrigger asChild>
               <div
                 ref={setNodeRef}
-                className={`${blockStyle.className} ${isOver ? 'ring-2 ring-blue-400 ring-opacity-50' : ''} ${isSelected ? 'ring-2 ring-blue-500 ring-opacity-80 shadow-lg' : ''}`}
+                className={`${blockStyle.className} ${getDropFeedbackClass()} ${isSelected ? 'ring-2 ring-blue-500 ring-opacity-80 shadow-lg' : ''}`}
                 style={{
                   ...blockStyle.style,
                   pointerEvents: 'auto',
                 }}
+                role="button"
+                aria-label={`Drop target for schedule block: ${activity?.title || 'Unknown Activity'}`}
+                tabIndex={0}
                 onClick={(e) => {
                   e.stopPropagation();
                   
@@ -413,6 +424,14 @@ function DroppableBlock({
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   onBlockEdit?.(block);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onBlockSelect?.(block.id, false);
+                    onBlockClick(block);
+                  }
                 }}
                 data-testid={`block-${block.id}`}
               >
@@ -1548,12 +1567,15 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedStudentIds, selec
                                 <div
                                   ref={provided.innerRef}
                                   {...provided.droppableProps}
-                                  className={`droppable-area cursor-pointer hover:bg-accent/50 transition-colors ${
+                                  className={`droppable-area cursor-pointer hover:bg-accent/50 transition-all duration-200 ${
                                     timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
                                   } ${
-                                    snapshot.isDraggingOver ? "bg-primary/10 border-primary" : ""
+                                    snapshot.isDraggingOver ? "bg-primary/20 border-primary ring-2 ring-primary/30" : ""
                                   }`}
                                   onClick={() => handleTimeSlotClick(timeSlot.time)}
+                                  role="button"
+                                  aria-label={`Time slot: ${timeSlot.displayTime || timeSlot.time}`}
+                                  tabIndex={0}
                                   style={{ 
                                     position: "absolute",
                                     top: `${topPosition}px`,
@@ -1669,12 +1691,15 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedStudentIds, selec
                           <div
                             ref={provided.innerRef}
                             {...provided.droppableProps}
-                            className={`droppable-area cursor-pointer hover:bg-accent/50 transition-colors ${
+                            className={`droppable-area cursor-pointer hover:bg-accent/50 transition-all duration-200 ${
                               timeSlot.isHour ? 'border-t border-border' : 'border-t border-border/50'
                             } ${
-                              snapshot.isDraggingOver ? "bg-primary/10 border-primary" : ""
+                              snapshot.isDraggingOver ? "bg-primary/20 border-primary ring-2 ring-primary/30" : ""
                             }`}
                             onClick={() => handleTimeSlotClick(timeSlot.time)}
+                            role="button"
+                            aria-label={`Time slot: ${timeSlot.displayTime || timeSlot.time}`}
+                            tabIndex={0}
                             style={{ 
                               position: "absolute",
                               top: `${topPosition}px`,
