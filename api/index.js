@@ -561,53 +561,63 @@ app.get('*', (req, res) => {
   // Check if this is an asset request
   if (req.url.startsWith('/assets/')) {
     console.log(`🎨 Asset request detected: ${req.url}`);
-    console.log(`📄 Looking for asset: ${path.join(__dirname, '../dist/public', req.url)}`);
+    const assetPath = path.join(__dirname, '../dist/public', req.url);
+    console.log(`📄 Looking for asset: ${assetPath}`);
     
     // Try to serve the asset file
-    try {
-      const assetPath = path.join(__dirname, '../dist/public', req.url);
-      console.log(`✅ Attempting to serve asset: ${assetPath}`);
-      res.sendFile(assetPath);
-    } catch (error) {
+    import('fs').then(fs => {
+      if (fs.existsSync(assetPath)) {
+        console.log(`✅ Serving asset: ${assetPath}`);
+        res.sendFile(assetPath);
+      } else {
+        console.error(`❌ Asset not found: ${assetPath}`);
+        res.status(404).send('Asset not found');
+      }
+    }).catch(error => {
       console.error(`❌ Error serving asset:`, error);
       res.status(404).send('Asset not found');
-    }
+    });
     return;
   }
   
   // For non-asset requests, serve the HTML
-  console.log(`📄 Looking for HTML file: ${path.join(__dirname, '../dist/public/index.html')}`);
+  const htmlPath = path.join(__dirname, '../dist/public/index.html');
+  console.log(`📄 Looking for HTML file: ${htmlPath}`);
   
-  try {
-    const filePath = path.join(__dirname, '../dist/public/index.html');
-    console.log(`✅ Attempting to serve HTML: ${filePath}`);
-    res.sendFile(filePath);
-  } catch (error) {
+  import('fs').then(fs => {
+    if (fs.existsSync(htmlPath)) {
+      console.log(`✅ Serving HTML: ${htmlPath}`);
+      res.sendFile(htmlPath);
+    } else {
+      console.error(`❌ HTML file not found: ${htmlPath}`);
+      // Fallback if static files aren't available
+      res.status(200).send(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>AlliBoard Scheduler - Debug</title>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+          </head>
+          <body>
+            <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
+              <h1>AlliBoard Scheduler - Debug Mode</h1>
+              <p>Request: ${req.method} ${req.url}</p>
+              <p>Directory: ${__dirname}</p>
+              <p>HTML Path: ${htmlPath}</p>
+              <p>If you see this message, the static files are not available.</p>
+              <script>
+                setTimeout(() => window.location.reload(), 5000);
+              </script>
+            </div>
+          </body>
+        </html>
+      `);
+    }
+  }).catch(error => {
     console.error(`❌ Error serving HTML:`, error);
-    // Fallback if static files aren't available
-    res.status(200).send(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>AlliBoard Scheduler - Debug</title>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-        </head>
-        <body>
-          <div style="text-align: center; padding: 50px; font-family: Arial, sans-serif;">
-            <h1>AlliBoard Scheduler - Debug Mode</h1>
-            <p>Request: ${req.method} ${req.url}</p>
-            <p>Directory: ${__dirname}</p>
-            <p>Error: ${error.message}</p>
-            <p>If you see this message, the static files are not available.</p>
-            <script>
-              setTimeout(() => window.location.reload(), 5000);
-            </script>
-          </div>
-        </body>
-      </html>
-    `);
-  }
+    res.status(500).send('Internal server error');
+  });
 });
 
 export default app;
