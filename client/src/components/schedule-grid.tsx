@@ -606,14 +606,15 @@ const generateImprovedTimeSlots = (startHour: number, endHour: number) => {
 
 // Dynamic height calculation based on container size
 const useDynamicHeight = (containerRef: React.RefObject<HTMLDivElement>, startHour: number = 8, endHour: number = 18, dataLoaded: boolean = false) => {
-  const [heightPerHour, setHeightPerHour] = useState(60); // Default fallback
+  const [heightPerHour, setHeightPerHour] = useState(120); // Default fallback - increased from 80
   
   const updateHeight = React.useCallback(() => {
     if (containerRef.current) {
       const containerHeight = containerRef.current.clientHeight;
       const totalHours = endHour - startHour;
       const availableHeight = containerHeight - 100; // Reserve space for header/padding
-      const calculatedHeightPerHour = Math.max(40, availableHeight / totalHours); // Minimum 40px per hour
+      // Increased minimum height per hour from 60px to 90px for better readability
+      const calculatedHeightPerHour = Math.max(90, availableHeight / totalHours); // Minimum 90px per hour
       setHeightPerHour(calculatedHeightPerHour);
     }
   }, [containerRef, startHour, endHour]);
@@ -659,8 +660,8 @@ const getImprovedBlockPosition = (startTime: string, endTime: string, heightPerH
   const height = Math.round(duration * pixelsPerMinute);
   
   // Only apply a minimum height for very short blocks (less than 5 minutes) to ensure usability
-  // This minimum scales with the viewport size
-  const absoluteMinHeight = Math.max(12, Math.round(heightPerHour * 0.05)); // 3% of hour height, minimum 12px
+  // This minimum scales with the viewport size - increased for better readability
+  const absoluteMinHeight = Math.max(30, Math.round(heightPerHour * 0.08)); // 8% of hour height, minimum 30px
   const finalHeight = duration < 5 ? Math.max(absoluteMinHeight, height) : height;
   
   return {
@@ -1444,7 +1445,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedStudentIds, selec
           </div>
         </div>
 
-        <div ref={containerRef} className="flex-1 overflow-auto p-4 relative">
+        <div ref={containerRef} className="flex-1 overflow-auto p-2 sm:p-4 relative min-h-[900px]">
           {/* Entity Schedule Summary */}
           <EntityScheduleSummary
             entityId={highlightedEntityId || null}
@@ -1459,7 +1460,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedStudentIds, selec
           
             {calendarView === "week" ? (
               /* Week View Layout */
-              <div className="grid grid-cols-[80px_repeat(5,1fr)] gap-0 h-full">
+              <div className="grid grid-cols-[60px_repeat(5,1fr)] sm:grid-cols-[80px_repeat(5,1fr)] gap-0 h-full min-w-[600px]">
                 {/* Time Column */}
                 <div className="border-r border-border relative">
                   {/* Time column header to match day headers */}
@@ -1480,7 +1481,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedStudentIds, selec
                         key={timeSlot.time}
                         className={`timeline-hour flex items-center justify-center ${
                           timeSlot.isHour 
-                            ? 'text-sm font-semibold text-foreground border-t-2 border-border bg-muted/20' 
+                            ? 'text-xs sm:text-sm font-semibold text-foreground border-t-2 border-border bg-muted/20' 
                             : timeSlot.isQuarter
                             ? 'text-xs text-muted-foreground border-t border-dotted border-border/30'
                             : 'text-xs text-muted-foreground border-t border-dashed border-border/40'
@@ -1611,7 +1612,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedStudentIds, selec
               </div>
             ) : (
               /* Day View Layout */
-              <div className="grid grid-cols-[80px_1fr] gap-0 h-full">
+              <div className="grid grid-cols-[60px_1fr] sm:grid-cols-[80px_1fr] gap-0 h-full">
                 {/* Time Column */}
                 <div className="border-r border-border relative">
                   {timeSlots.map((timeSlot, index) => {
@@ -1627,7 +1628,7 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedStudentIds, selec
                         key={timeSlot.time}
                         className={`timeline-hour flex items-center justify-center cursor-pointer hover:bg-accent transition-colors ${
                           timeSlot.isHour 
-                            ? 'text-sm font-semibold text-foreground border-t-2 border-border bg-muted/20' 
+                            ? 'text-xs sm:text-sm font-semibold text-foreground border-t-2 border-border bg-muted/20' 
                             : timeSlot.isQuarter
                             ? 'text-xs text-muted-foreground border-t border-dotted border-border/30'
                             : 'text-xs text-muted-foreground border-t border-dashed border-border/40'

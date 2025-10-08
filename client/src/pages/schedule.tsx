@@ -13,14 +13,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ChevronDown, Users, UserCheck, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Calendar,
   Save,
   AlertTriangle,
-  Users,
-  UserCheck,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
 import { ScheduleGrid } from "@/components/schedule-grid";
@@ -431,7 +429,7 @@ export default function Schedule() {
             </nav>
           </div>
           
-          <div className="flex items-center space-x-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
             {/* Calendar View Toggle */}
             <div className="flex items-center space-x-2">
               <label className="text-sm font-medium text-muted-foreground">Calendar:</label>
@@ -464,50 +462,106 @@ export default function Schedule() {
             {/* Entity Filter for Student/Aide views */}
             {(viewMode === "student" || viewMode === "aide") && (
               <div className="flex items-center space-x-2">
-                <div className="flex items-center space-x-1 max-w-md overflow-x-auto">
-                  {viewMode === "student" && students.map((student) => (
-                    <div key={student.id} className="flex items-center space-x-1 whitespace-nowrap">
-                      <Checkbox
-                        id={`student-${student.id}`}
-                        checked={selectedStudentIds.includes(student.id)}
-                        onCheckedChange={(checked) => handleStudentToggle(student.id, checked as boolean)}
-                      />
-                      <label
-                        htmlFor={`student-${student.id}`}
-                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center space-x-1"
-                      >
-                        <div className={`w-2 h-2 rounded-full bg-${student.color}-500`} />
-                        <span>{student.name}</span>
-                      </label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="flex items-center space-x-2">
+                      {viewMode === "student" ? (
+                        <>
+                          <Users className="h-4 w-4" />
+                          <span>Students ({selectedStudentIds.length})</span>
+                        </>
+                      ) : (
+                        <>
+                          <UserCheck className="h-4 w-4" />
+                          <span>Aides ({selectedAideIds.length})</span>
+                        </>
+                      )}
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80" align="start">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-medium text-sm">
+                          {viewMode === "student" ? "Select Students" : "Select Aides"}
+                        </h4>
+                        <div className="flex space-x-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (viewMode === "student") {
+                                setSelectedStudentIds(students.map(s => s.id));
+                              } else {
+                                setSelectedAideIds(aides.map(a => a.id));
+                              }
+                            }}
+                          >
+                            All
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (viewMode === "student") {
+                                setSelectedStudentIds([]);
+                              } else {
+                                setSelectedAideIds([]);
+                              }
+                            }}
+                          >
+                            None
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="max-h-60 overflow-y-auto space-y-2">
+                        {viewMode === "student" && students.map((student) => (
+                          <div key={student.id} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`student-${student.id}`}
+                              checked={selectedStudentIds.includes(student.id)}
+                              onCheckedChange={(checked) => handleStudentToggle(student.id, checked as boolean)}
+                            />
+                            <label
+                              htmlFor={`student-${student.id}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center space-x-2 flex-1 cursor-pointer"
+                            >
+                              <div className={`w-3 h-3 rounded-full bg-${student.color}-500`} />
+                              <span>{student.name}</span>
+                            </label>
+                          </div>
+                        ))}
+                        {viewMode === "aide" && aides.map((aide) => (
+                          <div key={aide.id} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`aide-${aide.id}`}
+                              checked={selectedAideIds.includes(aide.id)}
+                              onCheckedChange={(checked) => handleAideToggle(aide.id, checked as boolean)}
+                            />
+                            <label
+                              htmlFor={`aide-${aide.id}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center space-x-2 flex-1 cursor-pointer"
+                            >
+                              <div className={`w-3 h-3 rounded-full bg-${aide.color}-500`} />
+                              <span>{aide.name}</span>
+                            </label>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  ))}
-                  {viewMode === "aide" && aides.map((aide) => (
-                    <div key={aide.id} className="flex items-center space-x-1 whitespace-nowrap">
-                      <Checkbox
-                        id={`aide-${aide.id}`}
-                        checked={selectedAideIds.includes(aide.id)}
-                        onCheckedChange={(checked) => handleAideToggle(aide.id, checked as boolean)}
-                      />
-                      <label
-                        htmlFor={`aide-${aide.id}`}
-                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center space-x-1"
-                      >
-                        <div className={`w-2 h-2 rounded-full bg-${aide.color}-500`} />
-                        <span>{aide.name}</span>
-                      </label>
-                    </div>
-                  ))}
-                </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             )}
 
             {/* Navigation Controls */}
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-1 sm:space-x-2">
               {calendarView === "week" ? (
                 <>
                   <Button
                     variant="outline"
                     size="sm"
+                    className="h-8 w-8 sm:h-9 sm:w-auto px-2 sm:px-3"
                     onClick={goToPreviousWeek}
                     data-testid="button-previous-week"
                   >
@@ -516,14 +570,17 @@ export default function Schedule() {
                   <Button
                     variant="outline"
                     size="sm"
+                    className="h-8 px-2 sm:h-9 sm:px-3"
                     onClick={goToToday}
                     data-testid="button-today"
                   >
-                    Today
+                    <span className="hidden sm:inline">Today</span>
+                    <span className="sm:hidden">T</span>
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
+                    className="h-8 w-8 sm:h-9 sm:w-auto px-2 sm:px-3"
                     onClick={goToNextWeek}
                     data-testid="button-next-week"
                   >
@@ -535,6 +592,7 @@ export default function Schedule() {
                   <Button
                     variant="outline"
                     size="sm"
+                    className="h-8 w-8 sm:h-9 sm:w-auto px-2 sm:px-3"
                     onClick={goToPreviousDay}
                     data-testid="button-previous-day"
                   >
@@ -543,14 +601,17 @@ export default function Schedule() {
                   <Button
                     variant="outline"
                     size="sm"
+                    className="h-8 px-2 sm:h-9 sm:px-3"
                     onClick={goToToday}
                     data-testid="button-today"
                   >
-                    Today
+                    <span className="hidden sm:inline">Today</span>
+                    <span className="sm:hidden">T</span>
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
+                    className="h-8 w-8 sm:h-9 sm:w-auto px-2 sm:px-3"
                     onClick={goToNextDay}
                     data-testid="button-next-day"
                   >
@@ -620,7 +681,7 @@ export default function Schedule() {
             highlightedEntityType={highlightedEntityType}
           />
 
-          <main className="flex-1 flex flex-col overflow-hidden">
+          <main className="flex-1 flex flex-col overflow-hidden min-h-[1050px]">
             <div className="flex-1 flex flex-col overflow-hidden p-6">
               <ScheduleGrid
                 selectedDate={selectedDate}
