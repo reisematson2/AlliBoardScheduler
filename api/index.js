@@ -28,13 +28,27 @@ app.use(express.json());
 class BlobStorage {
   constructor() {
     this.basePath = 'alliboard-scheduler';
+    this.token = process.env.BLOB_READ_WRITE_TOKEN;
+    
+    if (!this.token) {
+      console.error('❌ BLOB_READ_WRITE_TOKEN not found in environment variables');
+      console.error('Available env vars:', Object.keys(process.env).filter(key => key.includes('BLOB')));
+    } else {
+      console.log('✅ BLOB_READ_WRITE_TOKEN found, length:', this.token.length);
+    }
   }
 
   async getData(type) {
     try {
+      if (!this.token) {
+        console.error(`❌ No BLOB token available for getting ${type}`);
+        return [];
+      }
+      
       const { blobs } = await list({
         prefix: `${this.basePath}/${type}/`,
-        limit: 1000
+        limit: 1000,
+        token: this.token
       });
       
       const data = [];
@@ -52,10 +66,16 @@ class BlobStorage {
 
   async saveData(type, id, data) {
     try {
+      if (!this.token) {
+        console.error(`❌ No BLOB token available for saving ${type}`);
+        throw new Error('BLOB_READ_WRITE_TOKEN not configured');
+      }
+      
       const filename = `${this.basePath}/${type}/${id}.json`;
       const blob = await put(filename, JSON.stringify(data), {
         access: 'public',
-        contentType: 'application/json'
+        contentType: 'application/json',
+        token: this.token
       });
       return data;
     } catch (error) {
@@ -66,8 +86,13 @@ class BlobStorage {
 
   async deleteData(type, id) {
     try {
+      if (!this.token) {
+        console.error(`❌ No BLOB token available for deleting ${type}`);
+        return false;
+      }
+      
       const filename = `${this.basePath}/${type}/${id}.json`;
-      await del(filename);
+      await del(filename, { token: this.token });
       return true;
     } catch (error) {
       console.error(`Error deleting ${type}:`, error);
@@ -242,7 +267,7 @@ app.get('/api/test', (req, res) => {
   });
 });
 
-// Add a debug endpoint to check file system
+// Add a debug endpoint to check file system and environment
 app.get('/api/debug', (req, res) => {
   console.log('🔧 Debug endpoint called');
   import('fs').then(fs => {
@@ -261,12 +286,19 @@ app.get('/api/debug', (req, res) => {
       const jsExists = fs.existsSync(jsPath);
       const cssExists = fs.existsSync(cssPath);
       
+      // Check environment variables
+      const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+      const allEnvVars = Object.keys(process.env);
+      const blobRelatedVars = allEnvVars.filter(key => key.includes('BLOB'));
+      
       console.log(`📁 dist exists: ${distExists}`);
       console.log(`📁 public exists: ${publicExists}`);
       console.log(`📄 index.html exists: ${indexExists}`);
       console.log(`📁 assets exists: ${assetsExists}`);
       console.log(`📄 JS file exists: ${jsExists}`);
       console.log(`📄 CSS file exists: ${cssExists}`);
+      console.log(`🔑 BLOB token exists: ${!!blobToken}`);
+      console.log(`🔑 BLOB token length: ${blobToken ? blobToken.length : 0}`);
       
       res.json({
         message: 'Debug info',
@@ -277,6 +309,9 @@ app.get('/api/debug', (req, res) => {
         assetsExists,
         jsExists,
         cssExists,
+        blobTokenExists: !!blobToken,
+        blobTokenLength: blobToken ? blobToken.length : 0,
+        blobRelatedEnvVars: blobRelatedVars,
         distPath,
         publicPath,
         indexPath,

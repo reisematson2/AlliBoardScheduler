@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Calendar,
   Save,
@@ -51,7 +52,8 @@ const getCurrentWeekStartDate = (): string => {
 export default function Schedule() {
   const [selectedDate, setSelectedDate] = useState(getCurrentDate());
   const [viewMode, setViewMode] = useState<"master" | "student" | "aide">("master");
-  const [selectedEntityId, setSelectedEntityId] = useState<string>("");
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [selectedAideIds, setSelectedAideIds] = useState<string[]>([]);
   const [calendarView, setCalendarView] = useState<"day" | "week">("day");
   const [templateName, setTemplateName] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState("");
@@ -282,12 +284,36 @@ export default function Schedule() {
 
 
   const handleViewModeChange = (mode: string) => {
-    setViewMode(mode as "master" | "student" | "aide");
-    setSelectedEntityId("");
+    const newMode = mode as "master" | "student" | "aide";
+    setViewMode(newMode);
+    
+    // When switching to student/aide mode, select all entities by default
+    if (newMode === "student") {
+      setSelectedStudentIds(students.map(s => s.id));
+      setSelectedAideIds([]);
+    } else if (newMode === "aide") {
+      setSelectedAideIds(aides.map(a => a.id));
+      setSelectedStudentIds([]);
+    } else {
+      setSelectedStudentIds([]);
+      setSelectedAideIds([]);
+    }
   };
 
-  const handleEntitySelect = (entityId: string) => {
-    setSelectedEntityId(entityId);
+  const handleStudentToggle = (studentId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedStudentIds(prev => [...prev, studentId]);
+    } else {
+      setSelectedStudentIds(prev => prev.filter(id => id !== studentId));
+    }
+  };
+
+  const handleAideToggle = (aideId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedAideIds(prev => [...prev, aideId]);
+    } else {
+      setSelectedAideIds(prev => prev.filter(id => id !== aideId));
+    }
   };
 
   const handleEntityHighlight = (entityId: string, entityType: 'student' | 'aide') => {
@@ -438,21 +464,40 @@ export default function Schedule() {
             {/* Entity Filter for Student/Aide views */}
             {(viewMode === "student" || viewMode === "aide") && (
               <div className="flex items-center space-x-2">
-                <Select value={selectedEntityId} onValueChange={handleEntitySelect}>
-                  <SelectTrigger className="w-40" data-testid="select-entity-filter">
-                    <SelectValue placeholder={`Select ${viewMode}`} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getViewEntities().map((entity) => (
-                      <SelectItem key={entity.id} value={entity.id}>
-                        <div className="flex items-center space-x-2">
-                          <div className={`w-3 h-3 rounded-full bg-${entity.color}-500`} />
-                          <span>{entity.name}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center space-x-1 max-w-md overflow-x-auto">
+                  {viewMode === "student" && students.map((student) => (
+                    <div key={student.id} className="flex items-center space-x-1 whitespace-nowrap">
+                      <Checkbox
+                        id={`student-${student.id}`}
+                        checked={selectedStudentIds.includes(student.id)}
+                        onCheckedChange={(checked) => handleStudentToggle(student.id, checked as boolean)}
+                      />
+                      <label
+                        htmlFor={`student-${student.id}`}
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center space-x-1"
+                      >
+                        <div className={`w-2 h-2 rounded-full bg-${student.color}-500`} />
+                        <span>{student.name}</span>
+                      </label>
+                    </div>
+                  ))}
+                  {viewMode === "aide" && aides.map((aide) => (
+                    <div key={aide.id} className="flex items-center space-x-1 whitespace-nowrap">
+                      <Checkbox
+                        id={`aide-${aide.id}`}
+                        checked={selectedAideIds.includes(aide.id)}
+                        onCheckedChange={(checked) => handleAideToggle(aide.id, checked as boolean)}
+                      />
+                      <label
+                        htmlFor={`aide-${aide.id}`}
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center space-x-1"
+                      >
+                        <div className={`w-2 h-2 rounded-full bg-${aide.color}-500`} />
+                        <span>{aide.name}</span>
+                      </label>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -580,7 +625,8 @@ export default function Schedule() {
               <ScheduleGrid
                 selectedDate={selectedDate}
                 viewMode={viewMode}
-                selectedEntityId={selectedEntityId}
+                selectedStudentIds={selectedStudentIds}
+                selectedAideIds={selectedAideIds}
                 calendarView={calendarView}
                 onEntityHighlight={handleEntityHighlight}
                 highlightedEntityId={highlightedEntityId}

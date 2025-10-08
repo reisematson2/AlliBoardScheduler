@@ -318,6 +318,9 @@ interface DroppableBlockProps {
   onBlockCopy?: (block: Block) => void;
   isSelected?: boolean;
   onBlockSelect?: (blockId: string, multiSelect?: boolean) => void;
+  viewMode: "master" | "student" | "aide";
+  selectedStudentIds: string[];
+  selectedAideIds: string[];
 }
 
 function DroppableBlock({ 
@@ -336,11 +339,44 @@ function DroppableBlock({
   onBlockDelete,
   onBlockCopy,
   isSelected = false,
-  onBlockSelect
+  onBlockSelect,
+  viewMode,
+  selectedStudentIds,
+  selectedAideIds
 }: DroppableBlockProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: `block-${block.id}`,
   });
+
+  // Helper function to get the display text based on view mode
+  const getDisplayText = () => {
+    const activityName = activity?.title || "Unknown Activity";
+    
+    if (viewMode === "student" && selectedStudentIds.length > 0) {
+      // Get names of selected students that are in this block
+      const blockStudentNames = block.studentIds
+        .filter(studentId => selectedStudentIds.includes(studentId))
+        .map(studentId => getStudent(studentId)?.name || "Unknown Student")
+        .filter(Boolean);
+      
+      if (blockStudentNames.length > 0) {
+        return `${activityName} - ${blockStudentNames.join(", ")}`;
+      }
+    } else if (viewMode === "aide" && selectedAideIds.length > 0) {
+      // Get names of selected aides that are in this block
+      const blockAideNames = block.aideIds
+        .filter(aideId => selectedAideIds.includes(aideId))
+        .map(aideId => getAide(aideId)?.name || "Unknown Aide")
+        .filter(Boolean);
+      
+      if (blockAideNames.length > 0) {
+        return `${activityName} - ${blockAideNames.join(", ")}`;
+      }
+    }
+    
+    // Master mode or no selected entities - show activity name only
+    return activityName;
+  };
 
   return (
     <ContextMenu>
@@ -417,7 +453,7 @@ function DroppableBlock({
                     return (
                       <div className="flex flex-col flex-1 min-w-0">
                         <div className={`text-xs font-medium line-clamp-1 ${getTextColorClass(activity?.color || 'blue')}`}>
-                          {activity?.title || "Unknown Activity"}
+                          {getDisplayText()}
                         </div>
                         <div className={`text-xs ${getMutedTextColorClass(activity?.color || 'blue')}`}>
                           {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(block.endTime)}
@@ -429,7 +465,7 @@ function DroppableBlock({
                     return (
                       <div className="flex items-center gap-1 flex-1 min-w-0">
                         <div className={`text-xs font-medium line-clamp-1 ${getTextColorClass(activity?.color || 'blue')}`}>
-                          {activity?.title || "Unknown Activity"}
+                          {getDisplayText()}
                         </div>
                         <div className={`text-xs whitespace-nowrap ${getMutedTextColorClass(activity?.color || 'blue')}`}>
                           {formatTimeDisplay(block.startTime)}-{formatTimeDisplay(block.endTime)}
@@ -636,14 +672,15 @@ const getImprovedBlockPosition = (startTime: string, endTime: string, heightPerH
 interface ScheduleGridProps {
   selectedDate: string;
   viewMode: "master" | "student" | "aide";
-  selectedEntityId?: string;
+  selectedStudentIds: string[];
+  selectedAideIds: string[];
   calendarView: "day" | "week";
   onEntityHighlight?: (entityId: string, entityType: 'student' | 'aide') => void;
   highlightedEntityId?: string | null;
   highlightedEntityType?: 'student' | 'aide' | null;
 }
 
-export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calendarView, onEntityHighlight, highlightedEntityId, highlightedEntityType }: ScheduleGridProps) {
+export function ScheduleGrid({ selectedDate, viewMode, selectedStudentIds, selectedAideIds, calendarView, onEntityHighlight, highlightedEntityId, highlightedEntityType }: ScheduleGridProps) {
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [selectedBlock, setSelectedBlock] = useState<Block | null>(null);
   const [newBlockTime, setNewBlockTime] = useState<{ start: string; end: string } | null>(null);
@@ -798,16 +835,20 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
     
     if (viewMode === "master") return dateFilteredBlocks;
     
-    if (viewMode === "student" && selectedEntityId) {
-      return dateFilteredBlocks.filter(block => block.studentIds.includes(selectedEntityId));
+    if (viewMode === "student" && selectedStudentIds.length > 0) {
+      return dateFilteredBlocks.filter(block => 
+        block.studentIds.some(studentId => selectedStudentIds.includes(studentId))
+      );
     }
     
-    if (viewMode === "aide" && selectedEntityId) {
-      return dateFilteredBlocks.filter(block => block.aideIds.includes(selectedEntityId));
+    if (viewMode === "aide" && selectedAideIds.length > 0) {
+      return dateFilteredBlocks.filter(block => 
+        block.aideIds.some(aideId => selectedAideIds.includes(aideId))
+      );
     }
     
     return dateFilteredBlocks;
-  }, [allBlocks, viewMode, selectedEntityId, optimisticBlocks, calendarView]);
+  }, [allBlocks, viewMode, selectedStudentIds, selectedAideIds, optimisticBlocks, calendarView]);
 
   const getActivity = (activityId: string) => {
     // Handle custom activities (stored as "custom:Activity Name|#color" or "custom:Activity Name" for backward compatibility)
@@ -1555,6 +1596,9 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                                 onBlockCopy={handleBlockCopy}
                                 isSelected={selectionManager.isSelected(block.id)}
                                 onBlockSelect={handleBlockSelect}
+                                viewMode={viewMode}
+                                selectedStudentIds={selectedStudentIds}
+                                selectedAideIds={selectedAideIds}
                               />
                             );
                             })
@@ -1673,6 +1717,9 @@ export function ScheduleGrid({ selectedDate, viewMode, selectedEntityId, calenda
                           onBlockCopy={handleBlockCopy}
                           isSelected={selectionManager.isSelected(block.id)}
                           onBlockSelect={handleBlockSelect}
+                          viewMode={viewMode}
+                          selectedStudentIds={selectedStudentIds}
+                          selectedAideIds={selectedAideIds}
                         />
                       );
                       })
